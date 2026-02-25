@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+.env
+*.pcapng
+!tests/fixtures/*.pcapng
+.DS_Store
