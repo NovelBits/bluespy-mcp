@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _PLATFORM_PATHS: dict[str, list[str]] = {
     "Darwin": [
+        "/Applications/blueSPY.app/Contents/Resources",
         "/Applications/blueSPY.app/Contents/Resources/python",
     ],
     "Windows": [

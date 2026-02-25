@@ -229,8 +229,8 @@ class CaptureManager:
 
         if total > 0:
             try:
-                first_ts = int(bluespy.packets[0].timestamp)
-                last_ts = int(bluespy.packets[total - 1].timestamp)
+                first_ts = int(bluespy.packets[0].time)
+                last_ts = int(bluespy.packets[total - 1].time)
                 result["first_timestamp_ns"] = first_ts
                 result["last_timestamp_ns"] = last_ts
                 result["duration_ns"] = last_ts - first_ts

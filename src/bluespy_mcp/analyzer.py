@@ -148,7 +148,7 @@ def find_packets(
                 continue
 
         pkt_dict: dict[str, Any] = {"index": i, "summary": summary}
-        for attr in ["timestamp", "rssi", "channel"]:
+        for attr in ["time", "rssi", "channel"]:
             try:
                 pkt_dict[attr] = getattr(pkt, attr)
             except (AttributeError, Exception):
@@ -172,7 +172,7 @@ def find_errors(capture: CaptureManager, max_results: int = 100) -> list[dict]:
             if any(kw in summary_upper for kw in _ERROR_KEYWORDS):
                 error_info: dict[str, Any] = {"index": i, "summary": summary}
                 try:
-                    error_info["timestamp"] = pkt.timestamp
+                    error_info["time"] = pkt.time
                 except (AttributeError, Exception):
                     pass
                 errors.append(error_info)
