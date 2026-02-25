@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -259,8 +260,9 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        stream=sys.stderr,
     )
-    mcp.run()
+    mcp.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":
