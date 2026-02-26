@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -97,7 +98,13 @@ class CaptureManager:
 
     BlueSPY supports only one loaded file at a time (global state).
     This class wraps that global state with file tracking and metadata.
+
+    All calls into libblueSPY are serialized through a threading lock because
+    the native library (Qt-based) is not thread-safe. Concurrent ctypes calls
+    from AnyIO worker threads cause SIGSEGV.
     """
+
+    _lock = threading.Lock()
 
     def __init__(self) -> None:
         self._file_path: Path | None = None
@@ -123,24 +130,27 @@ class CaptureManager:
         if path.suffix.lower() != ".pcapng":
             raise ValueError(f"Only .pcapng files are supported, got: {path.suffix}")
 
-        if self._is_loaded:
-            self.close()
+        with self._lock:
+            if self._is_loaded:
+                self._close_unlocked()
 
-        bluespy = get_bluespy()
-        bluespy.load_file(str(path))
-        self._file_path = path
-        self._is_loaded = True
+            bluespy = get_bluespy()
+            bluespy.load_file(str(path))
+            self._file_path = path
+            self._is_loaded = True
 
-        logger.info(f"Loaded capture: {path} ({self.packet_count} packets)")
+            pkt_count = len(bluespy.packets)
+
+        logger.info(f"Loaded capture: {path} ({pkt_count} packets)")
 
         return {
             "file_path": str(path),
             "file_size_bytes": path.stat().st_size,
-            "packet_count": self.packet_count,
+            "packet_count": pkt_count,
         }
 
-    def close(self) -> None:
-        """Close the currently loaded capture file."""
+    def _close_unlocked(self) -> None:
+        """Close without acquiring the lock (caller must hold it)."""
         if not self._is_loaded:
             return
         try:
@@ -151,6 +161,11 @@ class CaptureManager:
         self._file_path = None
         self._is_loaded = False
 
+    def close(self) -> None:
+        """Close the currently loaded capture file."""
+        with self._lock:
+            self._close_unlocked()
+
     def _require_loaded(self) -> None:
         if not self._is_loaded:
             raise RuntimeError("No capture file loaded. Call load() first.")
@@ -159,84 +174,94 @@ class CaptureManager:
     def packet_count(self) -> int:
         """Number of packets in the loaded capture."""
         self._require_loaded()
-        bluespy = get_bluespy()
-        return len(bluespy.packets)
+        with self._lock:
+            bluespy = get_bluespy()
+            return len(bluespy.packets)
 
     def get_packet(self, index: int) -> Any:
         """Get a raw BlueSPY event_id by packet index."""
         self._require_loaded()
-        bluespy = get_bluespy()
-        return bluespy.packets[index]
+        with self._lock:
+            bluespy = get_bluespy()
+            return bluespy.packets[index]
 
     def iter_packets(self, start: int = 0, limit: int | None = None) -> Iterator[tuple[int, Any]]:
-        """Iterate over packets, yielding (index, event_id) tuples."""
+        """Iterate over packets, yielding (index, event_id) tuples.
+
+        The lock is held for the entire iteration to prevent concurrent
+        access to libblueSPY from other threads.
+        """
         self._require_loaded()
-        bluespy = get_bluespy()
-        total = len(bluespy.packets)
-        end = total if limit is None else min(start + limit, total)
-        for i in range(start, end):
-            yield i, bluespy.packets[i]
+        with self._lock:
+            bluespy = get_bluespy()
+            total = len(bluespy.packets)
+            end = total if limit is None else min(start + limit, total)
+            for i in range(start, end):
+                yield i, bluespy.packets[i]
 
     def get_devices(self) -> list[DeviceInfo]:
         """Get all devices found in the capture."""
         self._require_loaded()
-        bluespy = get_bluespy()
-        devices = []
-        for idx, dev in enumerate(bluespy.devices):
-            info = DeviceInfo(index=idx)
-            info.address = _extract_address(dev)
-            info.name = _extract_name(dev)
-            try:
-                info.connection_count = len(list(dev.get_connections()))
-            except (AttributeError, Exception):
-                pass
-            devices.append(info)
-        return devices
+        with self._lock:
+            bluespy = get_bluespy()
+            devices = []
+            for idx, dev in enumerate(bluespy.devices):
+                info = DeviceInfo(index=idx)
+                info.address = _extract_address(dev)
+                info.name = _extract_name(dev)
+                try:
+                    info.connection_count = len(list(dev.get_connections()))
+                except (AttributeError, Exception):
+                    pass
+                devices.append(info)
+            return devices
 
     def get_connections(self) -> list[ConnectionInfo]:
         """Get all connections found in the capture."""
         self._require_loaded()
-        bluespy = get_bluespy()
-        connections = []
-        for idx, conn in enumerate(bluespy.connections):
-            info = ConnectionInfo(index=idx)
-            try:
-                info.summary = conn.query_str("summary")
-            except (AttributeError, Exception):
+        with self._lock:
+            bluespy = get_bluespy()
+            connections = []
+            for idx, conn in enumerate(bluespy.connections):
+                info = ConnectionInfo(index=idx)
                 try:
-                    info.summary = str(conn.summary)
+                    info.summary = conn.query_str("summary")
                 except (AttributeError, Exception):
-                    pass
-            for field_name in ["interval", "latency", "timeout"]:
-                try:
-                    setattr(info, field_name, conn.query(field_name))
-                except (AttributeError, Exception):
-                    pass
-            connections.append(info)
-        return connections
+                    try:
+                        info.summary = str(conn.summary)
+                    except (AttributeError, Exception):
+                        pass
+                for field_name in ["interval", "latency", "timeout"]:
+                    try:
+                        setattr(info, field_name, conn.query(field_name))
+                    except (AttributeError, Exception):
+                        pass
+                connections.append(info)
+            return connections
 
     def get_metadata(self) -> dict:
         """Extract capture metadata: duration, packet count, device/connection info."""
         self._require_loaded()
-        bluespy = get_bluespy()
+        with self._lock:
+            bluespy = get_bluespy()
 
-        total = len(bluespy.packets)
-        result: dict[str, Any] = {
-            "file_path": str(self._file_path),
-            "file_size_bytes": self._file_path.stat().st_size if self._file_path else 0,
-            "packet_count": total,
-        }
+            total = len(bluespy.packets)
+            result: dict[str, Any] = {
+                "file_path": str(self._file_path),
+                "file_size_bytes": self._file_path.stat().st_size if self._file_path else 0,
+                "packet_count": total,
+            }
 
-        if total > 0:
-            try:
-                first_ts = int(bluespy.packets[0].time)
-                last_ts = int(bluespy.packets[total - 1].time)
-                result["first_timestamp_ns"] = first_ts
-                result["last_timestamp_ns"] = last_ts
-                result["duration_ns"] = last_ts - first_ts
-                result["duration_seconds"] = round((last_ts - first_ts) / 1e9, 3)
-            except (AttributeError, TypeError, ValueError, OverflowError):
-                pass
+            if total > 0:
+                try:
+                    first_ts = int(bluespy.packets[0].time)
+                    last_ts = int(bluespy.packets[total - 1].time)
+                    result["first_timestamp_ns"] = first_ts
+                    result["last_timestamp_ns"] = last_ts
+                    result["duration_ns"] = last_ts - first_ts
+                    result["duration_seconds"] = round((last_ts - first_ts) / 1e9, 3)
+                except (AttributeError, TypeError, ValueError, OverflowError):
+                    pass
 
         devices = self.get_devices()
         connections = self.get_connections()
