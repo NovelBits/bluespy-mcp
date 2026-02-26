@@ -215,6 +215,22 @@ def analyze_connection(capture: CaptureManager, connection_index: int = 0) -> di
     return result
 
 
+def _extract_adv_address(pkt) -> str:
+    """Extract advertiser address from an advertising PDU's payload.
+
+    In legacy advertising PDUs (ADV_IND, ADV_NONCONN_IND, etc.), the
+    advertiser address (AdvA) occupies bytes 2-7 of the payload in
+    little-endian order.
+    """
+    try:
+        payload = pkt.query("payload")
+        if isinstance(payload, bytes) and len(payload) >= 8:
+            return ":".join(f"{b:02X}" for b in reversed(payload[2:8]))
+    except (AttributeError, Exception):
+        pass
+    return ""
+
+
 def analyze_advertising(capture: CaptureManager, device_index: int = 0) -> dict:
     """Analyze advertising data for a specific device."""
     capture._require_loaded()
@@ -243,14 +259,16 @@ def analyze_advertising(capture: CaptureManager, device_index: int = 0) -> dict:
             summary = pkt.summary
             if "ADV" not in summary.upper():
                 continue
-            # If we can check address, filter to this device
+            # Filter to this device by matching address
             if device.address:
-                try:
-                    if device.address not in pkt.query_str("address") and \
-                       device.address not in summary:
+                # Check summary text first (fast path)
+                if device.address in summary:
+                    pass  # match
+                else:
+                    # Extract advertiser address from PDU payload
+                    pkt_addr = _extract_adv_address(pkt)
+                    if pkt_addr != device.address:
                         continue
-                except (AttributeError, Exception):
-                    pass
 
             adv_info: dict[str, Any] = {"index": i, "summary": summary}
             try:
