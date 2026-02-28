@@ -124,6 +124,11 @@ def worker_loop(cmd_queue, result_queue):
     # Signal ready
     result_queue.put({"ok": True, "data": {"status": "ready"}})
 
+    # Track whether we opened a hardware connection. Only sessions that
+    # connect need bluespy_deinit on exit — discover-only sessions can
+    # skip it to avoid an unnecessary USB recovery delay.
+    was_connected = False
+
     while True:
         try:
             cmd = cmd_queue.get(timeout=1.0)
@@ -142,12 +147,22 @@ def worker_loop(cmd_queue, result_queue):
             break
 
         result = handle_command(bluespy, cmd)
+        if cmd.get("cmd") == "connect" and result.get("ok"):
+            was_connected = True
         result_queue.put(result)
 
-    # os._exit skips atexit handlers (bluespy_deinit → SIGSEGV) and
-    # avoids a USB recovery delay that bluespy_deinit introduces.
-    # The OS cleans up file descriptors and USB handles on process exit.
-    # We already called bluespy.disconnect() in the shutdown handler.
+    # Explicit deinit releases the USB handle (turns LED blue).
+    # We call it here instead of relying on atexit because os._exit
+    # below skips atexit handlers (atexit path can SIGSEGV on SIGTERM).
+    # Only needed after a real connection — discover-only sessions don't
+    # hold a deep USB handle, and deinit would cause an unnecessary
+    # recovery delay (~2s) that could break the next connection attempt.
+    if was_connected:
+        try:
+            bluespy._libbluespy.bluespy_deinit()
+        except Exception:
+            pass
+
     if multiprocessing.current_process().name != "MainProcess":
         time.sleep(0.1)  # Let result queue flush
         os._exit(0)

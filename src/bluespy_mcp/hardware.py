@@ -228,24 +228,41 @@ class HardwareManager:
                 "from a crashed session."
             )
 
-        try:
-            self._spawn_worker()
-            result = self._send_command({"cmd": "connect", "serial": serial})
-            if not result["ok"]:
-                raise HardwareError(result["error"])
-            self._state = HardwareState.CONNECTED
-            self._serial = serial
-            return result["data"]
-        except HardwareError:
+        # Retry the full spawn+connect sequence. The USB device may need
+        # recovery time after a previous worker process exited (e.g., after
+        # a discover_hardware() call). The health check in _spawn_worker
+        # can pass while heavier operations like reboot/connect still fail.
+        last_error = None
+        retries = 3
+        retry_delay = 2.0
+        for attempt in range(retries):
+            try:
+                self._spawn_worker()
+                result = self._send_command({"cmd": "connect", "serial": serial})
+                if result["ok"]:
+                    self._state = HardwareState.CONNECTED
+                    self._serial = serial
+                    return result["data"]
+                last_error = result["error"]
+            except HardwareError as e:
+                last_error = str(e)
+
+            # Connect failed — kill worker and retry after delay
             self._kill_worker()
-            self._release_lock()
-            self._state = HardwareState.IDLE
-            raise
-        except Exception:
-            self._kill_worker()
-            self._release_lock()
-            self._state = HardwareState.IDLE
-            raise
+            if attempt < retries - 1:
+                logger.info(
+                    f"Connect attempt {attempt + 1}/{retries} failed: "
+                    f"{last_error}. Retrying in {retry_delay}s..."
+                )
+                time.sleep(retry_delay)
+
+        self._release_lock()
+        self._state = HardwareState.IDLE
+        raise HardwareError(
+            f"Failed to connect after {retries} attempts: {last_error}. "
+            "If the device LED is green, close the BlueSPY desktop app "
+            "or unplug/replug the USB cable."
+        )
 
     def start_capture(
         self,
