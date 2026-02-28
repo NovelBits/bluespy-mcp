@@ -11,6 +11,7 @@ is first received, keeping the import cost in the subprocess.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import time
 from typing import Any
@@ -130,3 +131,12 @@ def worker_loop(cmd_queue, result_queue):
 
         result = handle_command(bluespy, cmd)
         result_queue.put(result)
+
+    # Skip atexit handlers when running as a real subprocess.
+    # bluespy.py registers bluespy_deinit via atexit which corrupts
+    # USB state, causing bluespy_init to fail in the next subprocess.
+    # We handle cleanup via the disconnect command instead.
+    import multiprocessing
+    if multiprocessing.current_process().name != "MainProcess":
+        time.sleep(0.1)  # Let result queue flush
+        os._exit(0)
