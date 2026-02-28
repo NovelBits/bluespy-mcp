@@ -334,3 +334,97 @@ class TestLiveAnalysisRouting:
             result = json.loads(inspect_advertising())
         assert "error" in result
         assert "loaded capture file" in result["error"]
+
+
+class TestLiveAnalysisEndToEnd:
+    """End-to-end test simulating the full live capture + analysis flow."""
+
+    def test_full_live_analysis_flow(self):
+        from bluespy_mcp.hardware import HardwareState
+        from bluespy_mcp.server import (
+            connect_hardware,
+            start_capture,
+            capture_summary,
+            search_packets,
+            stop_capture,
+        )
+
+        mgr = MagicMock()
+
+        # Phase 1: Connect hardware (IDLE → CONNECTED)
+        mgr.state = HardwareState.IDLE
+        mgr.connect.return_value = {
+            "serial": -1, "connected_serials": [0x00010100],
+        }
+        with patch("bluespy_mcp.server._hardware", mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            result = json.loads(connect_hardware())
+        assert result["success"] is True
+        mgr.connect.assert_called_once()
+
+        # Phase 2: Start capture (CONNECTED → CAPTURING)
+        mgr.state = HardwareState.CONNECTED
+        mgr.start_capture.return_value = {
+            "file_path": "/tmp/live-test.pcapng", "capturing": True,
+        }
+        with patch("bluespy_mcp.server._hardware", mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            result = json.loads(start_capture())
+        assert result["success"] is True
+        assert result["capturing"] is True
+        mgr.start_capture.assert_called_once()
+
+        # Phase 3: Query capture summary (CAPTURING state)
+        mgr.state = HardwareState.CAPTURING
+        mgr.get_summary.return_value = {
+            "packet_count": 1500,
+            "duration": 12.3,
+            "devices": 5,
+            "type_counts": {
+                "ADV_IND": 800,
+                "CONNECT_IND": 50,
+                "DATA": 650,
+            },
+        }
+        with patch("bluespy_mcp.server._hardware", mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            result = json.loads(capture_summary())
+        assert result["packet_count"] == 1500
+        assert result["type_counts"]["ADV_IND"] == 800
+        mgr.get_summary.assert_called_once()
+
+        # Phase 4: Search packets by channel (CAPTURING state)
+        mgr.get_packets.return_value = {
+            "count": 3,
+            "packets": [
+                {"id": 10, "channel": 37, "type": "ADV_IND"},
+                {"id": 25, "channel": 37, "type": "ADV_IND"},
+                {"id": 42, "channel": 37, "type": "SCAN_REQ"},
+            ],
+        }
+        with patch("bluespy_mcp.server._hardware", mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            result = json.loads(search_packets(channel=37))
+        assert result["count"] == 3
+        assert all(p["channel"] == 37 for p in result["packets"])
+        mgr.get_packets.assert_called_once_with(
+            summary_contains=None, packet_type=None, channel=37, max_results=100,
+        )
+
+        # Phase 5: Stop capture
+        mgr.stop_capture.return_value = {
+            "file_path": "/tmp/live-test.pcapng",
+            "packet_count": 1500,
+            "duration_seconds": 12.3,
+        }
+        with patch("bluespy_mcp.server._hardware", mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            result = json.loads(stop_capture())
+        assert result["success"] is True
+        assert result["packet_count"] == 1500
+        mgr.stop_capture.assert_called_once()
