@@ -158,11 +158,59 @@ Add to your MCP server configuration:
 | `inspect_advertising(device_index)` | Per-device advertising analysis with RSSI and channel stats |
 | `find_capture_errors(max_results?)` | Error, failure, disconnect, and timeout packets |
 
+### Live Hardware
+
+| Tool | Description |
+|------|-------------|
+| `discover_hardware()` | List connected Moreph serial numbers |
+| `connect_hardware(serial)` | Connect to hardware (reboots first, acquires lock) |
+| `disconnect_hardware()` | Disconnect from hardware |
+| `start_capture(filename, duration_seconds, LE, CL, QHS, wifi, CS)` | Start live capture |
+| `stop_capture()` | Stop active capture |
+| `hardware_status()` | Get current hardware state |
+
 ### Resources
 
 | Resource | Description |
 |----------|-------------|
 | `capture://status` | Current loaded file metadata (JSON) |
+| `bluespy://hardware` | Current hardware connection state (JSON) |
+| `bluespy://capture` | Current live capture state (JSON) |
+
+### Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `analyze-capture` | Guided workflow to load and analyze a capture file |
+| `quick-capture` | Quick-start workflow for live hardware capture |
+| `debug-connection` | Troubleshoot hardware connection issues |
+
+## Live Hardware Capture
+
+If you have a BlueSPY sniffer connected via USB, the MCP server can control it directly — discover devices, start/stop captures, and analyze results in real time.
+
+```
+You: What hardware is connected?
+
+Claude: Found 1 Moreph device:
+  → Serial: 2411001234
+
+You: Connect to it and capture Bluetooth LE traffic for 10 seconds.
+
+Claude: Connected to device 2411001234.
+  Capturing Bluetooth LE packets for 10 seconds...
+  Capture complete — saved to ble_capture_20260228.pcapng (12,847 packets).
+
+You: Summarize what you captured.
+
+Claude: 12,847 packets over 10 seconds.
+  87 devices detected, 12 active connections.
+  → 4,231 ADV_IND (connectable advertisements)
+  → 1,892 ADV_NONCONN_IND (beacons)
+  → 3,104 LE_DATA (active data transfer)
+```
+
+Hardware access is subprocess-isolated — if a hardware call hangs, the MCP server kills the worker process and stays responsive. A file lock (`~/.bluespy-mcp.lock`) ensures only one client controls the hardware at a time.
 
 ## Troubleshooting
 

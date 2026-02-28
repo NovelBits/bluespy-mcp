@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bluespy-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP server for BlueSPY Bluetooth LE protocol analyzer"
 readme = "README.md"
 license = "MIT"
