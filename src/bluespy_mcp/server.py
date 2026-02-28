@@ -312,6 +312,8 @@ def capture_summary() -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.get_summary())
         return _json(summarize_capture(_capture))
     except Exception as e:
         return _error(str(e))
@@ -323,6 +325,8 @@ def list_devices() -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.get_devices())
         devices = _capture.get_devices()
         return _json({
             "count": len(devices),
@@ -338,6 +342,8 @@ def list_connections() -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.get_connections())
         connections = _capture.get_connections()
         return _json({
             "count": len(connections),
@@ -368,6 +374,13 @@ def search_packets(
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.get_packets(
+                summary_contains=summary_contains,
+                packet_type=packet_type,
+                channel=channel,
+                max_results=max_results,
+            ))
         results = find_packets(
             _capture,
             summary_contains=summary_contains,
@@ -390,6 +403,11 @@ def inspect_connection(connection_index: int = 0) -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _error(
+                "inspect_connection requires a loaded capture file. "
+                "Stop the capture and load the file first."
+            )
         return _json(analyze_connection(_capture, connection_index))
     except Exception as e:
         return _error(str(e))
@@ -405,6 +423,11 @@ def inspect_advertising(device_index: int = 0) -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _error(
+                "inspect_advertising requires a loaded capture file. "
+                "Stop the capture and load the file first."
+            )
         return _json(analyze_advertising(_capture, device_index))
     except Exception as e:
         return _error(str(e))
@@ -420,6 +443,8 @@ def find_capture_errors(max_results: int = 100) -> str:
     if not _data_available():
         return _not_ready()
     try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.get_errors(max_results=max_results))
         errors = find_errors(_capture, max_results=max_results)
         return _json({"count": len(errors), "errors": errors})
     except Exception as e:

@@ -220,3 +220,117 @@ class TestPromptTemplates:
         assert "list_connections" in result
         assert "inspect_connection" in result
         assert "find_capture_errors" in result
+
+
+class TestLiveAnalysisRouting:
+    """Test that analysis tools route through hardware worker during live capture."""
+
+    @pytest.fixture
+    def capturing_hw(self):
+        """HardwareManager mock in CAPTURING state."""
+        from bluespy_mcp.hardware import HardwareState
+        mgr = MagicMock()
+        mgr.state = HardwareState.CAPTURING
+        return mgr
+
+    @pytest.fixture
+    def idle_hw(self):
+        """HardwareManager mock in IDLE state."""
+        from bluespy_mcp.hardware import HardwareState
+        mgr = MagicMock()
+        mgr.state = HardwareState.IDLE
+        return mgr
+
+    def test_capture_summary_routes_to_hardware(self, capturing_hw):
+        capturing_hw.get_summary.return_value = {
+            "packet_count": 42, "duration": 5.0, "devices": 3,
+        }
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import capture_summary
+            result = json.loads(capture_summary())
+        capturing_hw.get_summary.assert_called_once()
+        assert result["packet_count"] == 42
+
+    def test_search_packets_routes_to_hardware(self, capturing_hw):
+        capturing_hw.get_packets.return_value = {
+            "count": 2, "packets": [{"id": 1}, {"id": 2}],
+        }
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import search_packets
+            result = json.loads(search_packets(channel=37))
+        capturing_hw.get_packets.assert_called_once_with(
+            summary_contains=None, packet_type=None, channel=37, max_results=100,
+        )
+        assert result["count"] == 2
+
+    def test_list_devices_routes_to_hardware(self, capturing_hw):
+        capturing_hw.get_devices.return_value = {
+            "count": 1, "devices": [{"address": "AA:BB:CC:DD:EE:FF"}],
+        }
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import list_devices
+            result = json.loads(list_devices())
+        capturing_hw.get_devices.assert_called_once()
+        assert result["count"] == 1
+
+    def test_list_connections_routes_to_hardware(self, capturing_hw):
+        capturing_hw.get_connections.return_value = {
+            "count": 1, "connections": [{"handle": 0x0040}],
+        }
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import list_connections
+            result = json.loads(list_connections())
+        capturing_hw.get_connections.assert_called_once()
+        assert result["count"] == 1
+
+    def test_find_errors_routes_to_hardware(self, capturing_hw):
+        capturing_hw.get_errors.return_value = {
+            "count": 0, "errors": [],
+        }
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import find_capture_errors
+            result = json.loads(find_capture_errors())
+        capturing_hw.get_errors.assert_called_once_with(max_results=100)
+        assert result["count"] == 0
+
+    def test_file_analysis_still_works(self, idle_hw):
+        """When hw is IDLE and a file is loaded, use existing capture path."""
+        mock_device = MagicMock()
+        mock_device.to_dict.return_value = {"address": "11:22:33:44:55:66"}
+        with patch("bluespy_mcp.server._hardware", idle_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = True
+            mock_cap.get_devices.return_value = [mock_device]
+            from bluespy_mcp.server import list_devices
+            result = json.loads(list_devices())
+        mock_cap.get_devices.assert_called_once()
+        idle_hw.get_devices.assert_not_called()
+        assert result["count"] == 1
+
+    def test_inspect_connection_rejects_during_live(self, capturing_hw):
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import inspect_connection
+            result = json.loads(inspect_connection())
+        assert "error" in result
+        assert "loaded capture file" in result["error"]
+
+    def test_inspect_advertising_rejects_during_live(self, capturing_hw):
+        with patch("bluespy_mcp.server._hardware", capturing_hw), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = False
+            from bluespy_mcp.server import inspect_advertising
+            result = json.loads(inspect_advertising())
+        assert "error" in result
+        assert "loaded capture file" in result["error"]
