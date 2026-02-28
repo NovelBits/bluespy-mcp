@@ -274,6 +274,130 @@ class TestConcurrentLockContention:
             os.unlink(lock_path)
 
 
+class TestLiveAnalysisMethods:
+    """Tests for live capture analysis query methods."""
+
+    def _make_capturing_mgr(self):
+        """Create a HardwareManager in CAPTURING state with mock queues."""
+        mgr = HardwareManager()
+        mgr._state = HardwareState.CAPTURING
+        mgr._serial = 0x00010100
+        mgr._capture_file = "/tmp/test.pcapng"
+        mgr._cmd_queue = MagicMock()
+        mgr._result_queue = MagicMock()
+        return mgr
+
+    def test_get_summary_sends_command(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"packet_count": 42, "duration": 10.5},
+        }
+        result = mgr.get_summary(limit=100)
+        assert result == {"packet_count": 42, "duration": 10.5}
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert cmd["cmd"] == "get_summary"
+        assert cmd["limit"] == 100
+
+    def test_get_summary_not_capturing_returns_empty(self):
+        mgr = HardwareManager()
+        mgr._state = HardwareState.CONNECTED
+        assert mgr.get_summary() == {}
+
+    def test_get_summary_idle_returns_empty(self):
+        mgr = HardwareManager()
+        assert mgr.get_summary() == {}
+
+    def test_get_summary_error_returns_empty(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.side_effect = Exception("Queue.Empty")
+        # _send_command will kill worker and raise HardwareError, which get_summary catches
+        with patch.object(mgr, "_kill_worker"), \
+             patch.object(mgr, "_release_lock"):
+            result = mgr.get_summary()
+        assert result == {}
+
+    def test_get_packets_sends_command(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"packets": [{"id": 1}], "count": 1},
+        }
+        result = mgr.get_packets(summary_contains="ADV_IND", channel=37, max_results=50, start=10)
+        assert result["count"] == 1
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert cmd["cmd"] == "get_packets"
+        assert cmd["summary_contains"] == "ADV_IND"
+        assert cmd["channel"] == 37
+        assert cmd["max_results"] == 50
+        assert cmd["start"] == 10
+
+    def test_get_packets_omits_none_filters(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"packets": [], "count": 0},
+        }
+        mgr.get_packets()
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert "summary_contains" not in cmd
+        assert "packet_type" not in cmd
+        assert "channel" not in cmd
+
+    def test_get_packets_not_capturing_returns_empty(self):
+        mgr = HardwareManager()
+        mgr._state = HardwareState.CONNECTED
+        result = mgr.get_packets()
+        assert result == {"packets": [], "count": 0}
+
+    def test_get_devices_sends_command(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"devices": [{"addr": "AA:BB:CC:DD:EE:FF"}], "count": 1},
+        }
+        result = mgr.get_devices()
+        assert result["count"] == 1
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert cmd["cmd"] == "get_devices"
+
+    def test_get_connections_sends_command(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"connections": [{"handle": 1}], "count": 1},
+        }
+        result = mgr.get_connections()
+        assert result["count"] == 1
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert cmd["cmd"] == "get_connections"
+
+    def test_get_errors_sends_command(self):
+        mgr = self._make_capturing_mgr()
+        mgr._result_queue.get.return_value = {
+            "ok": True,
+            "data": {"errors": [{"msg": "CRC fail"}], "count": 1},
+        }
+        result = mgr.get_errors(max_results=50, start=5)
+        assert result["count"] == 1
+        cmd = mgr._cmd_queue.put.call_args[0][0]
+        assert cmd["cmd"] == "get_errors"
+        assert cmd["max_results"] == 50
+        assert cmd["start"] == 5
+
+    def test_get_devices_not_capturing_returns_empty(self):
+        mgr = HardwareManager()
+        assert mgr.get_devices() == {"devices": [], "count": 0}
+
+    def test_get_connections_not_capturing_returns_empty(self):
+        mgr = HardwareManager()
+        assert mgr.get_connections() == {"connections": [], "count": 0}
+
+    def test_get_errors_not_capturing_returns_empty(self):
+        mgr = HardwareManager()
+        assert mgr.get_errors() == {"errors": [], "count": 0}
+
+
 class TestCleanup:
     """Test atexit cleanup behavior."""
 

@@ -54,6 +54,11 @@ _TIMEOUTS = {
     "start_capture": 10,
     "stop_capture": 10,
     "packet_count": 5,
+    "get_summary": 15,
+    "get_packets": 10,
+    "get_devices": 5,
+    "get_connections": 5,
+    "get_errors": 10,
 }
 
 
@@ -376,6 +381,87 @@ class HardwareManager:
         except HardwareError:
             pass
         return 0
+
+    def get_summary(self, limit: int | None = None) -> dict:
+        """Get a summary of the live capture from the worker."""
+        if self._state != HardwareState.CAPTURING:
+            return {}
+        try:
+            result = self._send_command({"cmd": "get_summary", "limit": limit})
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {}
+
+    def get_packets(
+        self,
+        *,
+        summary_contains: str | None = None,
+        packet_type: str | None = None,
+        channel: int | None = None,
+        max_results: int = 100,
+        start: int = 0,
+    ) -> dict:
+        """Query captured packets with optional filters."""
+        if self._state != HardwareState.CAPTURING:
+            return {"packets": [], "count": 0}
+        try:
+            cmd: dict[str, Any] = {
+                "cmd": "get_packets",
+                "max_results": max_results,
+                "start": start,
+            }
+            if summary_contains is not None:
+                cmd["summary_contains"] = summary_contains
+            if packet_type is not None:
+                cmd["packet_type"] = packet_type
+            if channel is not None:
+                cmd["channel"] = channel
+            result = self._send_command(cmd)
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {"packets": [], "count": 0}
+
+    def get_devices(self) -> dict:
+        """Get list of discovered devices from the live capture."""
+        if self._state != HardwareState.CAPTURING:
+            return {"devices": [], "count": 0}
+        try:
+            result = self._send_command({"cmd": "get_devices"})
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {"devices": [], "count": 0}
+
+    def get_connections(self) -> dict:
+        """Get list of active connections from the live capture."""
+        if self._state != HardwareState.CAPTURING:
+            return {"connections": [], "count": 0}
+        try:
+            result = self._send_command({"cmd": "get_connections"})
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {"connections": [], "count": 0}
+
+    def get_errors(self, max_results: int = 100, start: int = 0) -> dict:
+        """Get capture errors from the live capture."""
+        if self._state != HardwareState.CAPTURING:
+            return {"errors": [], "count": 0}
+        try:
+            result = self._send_command(
+                {"cmd": "get_errors", "max_results": max_results, "start": start}
+            )
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {"errors": [], "count": 0}
 
     def get_status(self) -> dict:
         """Get current hardware status (local state, no subprocess call)."""
