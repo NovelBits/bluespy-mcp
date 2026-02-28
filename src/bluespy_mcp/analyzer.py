@@ -2,93 +2,20 @@
 
 All functions operate on a CaptureManager that has a file loaded.
 Results are plain dicts/lists for easy JSON serialization.
+
+For shared analysis logic (classify_packet, etc.) see analysis_core.py.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from bluespy_mcp.analysis_core import (
+    classify_packet,
+    ERROR_KEYWORDS as _ERROR_KEYWORDS,
+    SUMMARY_PACKET_LIMIT as _SUMMARY_PACKET_LIMIT,
+)
 from bluespy_mcp.capture import CaptureManager
-
-# Maximum packets to iterate for summary (prevents hanging on huge captures)
-_SUMMARY_PACKET_LIMIT = 50_000
-
-_ERROR_KEYWORDS = [
-    "ERROR", "FAIL", "REJECT", "TIMEOUT", "DISCONNECT",
-    "UNKNOWN", "INVALID", "REFUSED", "TERMINATE",
-]
-
-
-def classify_packet(summary: str) -> str:
-    """Classify a packet based on its summary string.
-
-    Checks longer/more-specific names first to avoid substring collisions
-    (e.g., AUX_ADV_IND contains ADV_IND).
-    """
-    s = summary.upper()
-
-    # Extended advertising (check before base types)
-    if "AUX_ADV_IND" in s:
-        return "AUX_ADV_IND"
-    if "AUX_CONNECT_RSP" in s:
-        return "AUX_CONNECT_RSP"
-    if "AUX_SCAN_RSP" in s:
-        return "AUX_SCAN_RSP"
-    if "AUX_SCAN_REQ" in s:
-        return "AUX_SCAN_REQ"
-    if "ADV_EXT_IND" in s:
-        return "ADV_EXT_IND"
-
-    # Legacy advertising
-    if "ADV_DIRECT_IND" in s:
-        return "ADV_DIRECT_IND"
-    if "ADV_NONCONN_IND" in s:
-        return "ADV_NONCONN_IND"
-    if "ADV_SCAN_IND" in s:
-        return "ADV_SCAN_IND"
-    if "ADV_IND" in s:
-        return "ADV_IND"
-    if "SCAN_RSP" in s:
-        return "SCAN_RSP"
-    if "SCAN_REQ" in s:
-        return "SCAN_REQ"
-
-    # Connection events
-    if "CONNECT_IND" in s or "AUX_CONNECT_REQ" in s:
-        return "CONNECT_IND"
-    if "LL_CONNECTION_UPDATE" in s:
-        return "LL_CONNECTION_UPDATE"
-    if "LL_TERMINATE" in s:
-        return "LL_CONTROL"
-
-    # LE data (check before L2CAP — "LE-U L2CAP Data" should be LE_DATA)
-    if "LE-U" in s:
-        return "LE_DATA"
-
-    # Higher-layer protocols
-    if "L2CAP" in s:
-        return "L2CAP"
-    if "ATT" in s or "GATT" in s:
-        return "ATT"
-    if "SMP" in s:
-        return "SMP"
-
-    # Link Layer control
-    if "LL_" in s:
-        return "LL_CONTROL"
-
-    # Error/status
-    if "CRC" in s:
-        return "CRC_ERROR"
-    if "ENCRYPTED" in s or "POSSIBLY ENCRYPTED" in s:
-        return "ENCRYPTED"
-    if "NOT DECODED" in s or "NOT CONNECTED" in s:
-        return "UNDECODED"
-
-    if "DATA" in s:
-        return "DATA"
-
-    return "OTHER"
 
 
 def summarize_capture(capture: CaptureManager) -> dict:
