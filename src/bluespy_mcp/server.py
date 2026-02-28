@@ -223,7 +223,7 @@ def discover_hardware() -> str:
 
 
 @mcp.tool
-def connect_hardware(serial: int = -1) -> str:
+def connect_hardware(serial: int = -1, force: bool = False) -> str:
     """Connect to BlueSPY Moreph hardware for live capture.
 
     Reboots the device first to ensure clean state, then connects.
@@ -231,6 +231,9 @@ def connect_hardware(serial: int = -1) -> str:
 
     Args:
         serial: Moreph serial number (hex integer). Use -1 for first available device.
+        force: Override a stale lock from a crashed session. Use this when
+               connect fails with "Hardware is in use by another session" but
+               no other session is actually running.
     """
     if _capture.is_loaded:
         return _error(
@@ -238,7 +241,7 @@ def connect_hardware(serial: int = -1) -> str:
             "before connecting to hardware."
         )
     try:
-        data = _hardware.connect(serial)
+        data = _hardware.connect(serial, force=force)
         return _json({"success": True, **data})
     except HardwareError as e:
         return _json({"success": False, "error": str(e)})

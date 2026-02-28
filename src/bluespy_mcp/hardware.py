@@ -75,8 +75,18 @@ class HardwareManager:
     def is_hardware_active(self) -> bool:
         return self._state in (HardwareState.CONNECTED, HardwareState.CAPTURING)
 
-    def _try_acquire_lock(self) -> bool:
-        """Try to acquire the file lock. Returns True on success."""
+    def _try_acquire_lock(self, force: bool = False) -> bool:
+        """Try to acquire the file lock. Returns True on success.
+
+        If force=True, removes the existing lock file first. Use this
+        when a previous session crashed without releasing the lock.
+        """
+        if force and os.path.exists(self._lock_path):
+            try:
+                os.remove(self._lock_path)
+                logger.info(f"Force-removed stale lock file: {self._lock_path}")
+            except OSError:
+                pass
         try:
             self._lock_fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR)
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -133,7 +143,11 @@ class HardwareManager:
                 )
                 time.sleep(retry_delay)
 
-        raise HardwareError(f"Worker failed to start after {retries} attempts: {last_error}")
+        raise HardwareError(
+            f"Worker failed to start after {retries} attempts: {last_error}. "
+            "If the BlueSPY desktop app is open, close it first. "
+            "Otherwise, try unplugging and replugging the USB cable."
+        )
 
     def _kill_worker(self) -> None:
         """Kill the worker subprocess.
@@ -176,7 +190,8 @@ class HardwareManager:
             self._release_lock()
             raise HardwareError(
                 f"Hardware operation '{cmd['cmd']}' timed out after {timeout}s. "
-                "The device may need a USB unplug/replug."
+                "If the device LED is green, close the BlueSPY desktop app "
+                "or unplug/replug the USB cable."
             )
 
     def discover(self) -> dict:
@@ -191,18 +206,26 @@ class HardwareManager:
             self._send_command({"cmd": "shutdown"}, timeout=5)
             self._kill_worker()
 
-    def connect(self, serial: int = -1) -> dict:
-        """Connect to hardware: acquire lock -> spawn worker -> reboot -> connect."""
+    def connect(self, serial: int = -1, force: bool = False) -> dict:
+        """Connect to hardware: acquire lock -> spawn worker -> reboot -> connect.
+
+        Args:
+            serial: Moreph serial number. Use -1 for first available device.
+            force: If True, remove stale lock file from a crashed session
+                   before connecting. Does not help if the BlueSPY desktop
+                   app is actively using the device.
+        """
         if self._state != HardwareState.IDLE:
             raise HardwareError(
                 f"Cannot connect: current state is {self._state.value}. "
                 "Disconnect first or close the loaded file."
             )
 
-        if not self._try_acquire_lock():
+        if not self._try_acquire_lock(force=force):
             raise HardwareError(
-                "Hardware is in use by another session. "
-                "Only one MCP client can use the hardware at a time."
+                "Hardware is in use by another MCP session. "
+                "Try connect_hardware(force=True) to override a stale lock "
+                "from a crashed session."
             )
 
         try:
@@ -213,6 +236,11 @@ class HardwareManager:
             self._state = HardwareState.CONNECTED
             self._serial = serial
             return result["data"]
+        except HardwareError:
+            self._kill_worker()
+            self._release_lock()
+            self._state = HardwareState.IDLE
+            raise
         except Exception:
             self._kill_worker()
             self._release_lock()

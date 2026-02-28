@@ -163,7 +163,7 @@ Add to your MCP server configuration:
 | Tool | Description |
 |------|-------------|
 | `discover_hardware()` | List connected Moreph serial numbers |
-| `connect_hardware(serial)` | Connect to hardware (reboots first, acquires lock) |
+| `connect_hardware(serial, force)` | Connect to hardware (reboots first, acquires lock) |
 | `disconnect_hardware()` | Disconnect from hardware |
 | `start_capture(filename, duration_seconds, LE, CL, QHS, wifi, CS)` | Start live capture |
 | `stop_capture()` | Stop active capture |
@@ -231,8 +231,18 @@ If you're using FastMCP v3.0.2+, ensure the server runs with `show_banner=False`
 The MCP server retries automatically when this happens, but if it persists:
 
 1. **Connect directly to your computer** — do not use a USB hub. The Moreph sniffer requires a direct USB connection for reliable communication.
-2. **Unplug and replug** the device, then try again.
-3. **Close other BlueSPY sessions** — only one client can control the hardware at a time. The file lock (`~/.bluespy-mcp.lock`) enforces this, but a stale lock from a crashed session may need manual removal.
+2. **Close the BlueSPY desktop app** if it's open. Only one application can control the hardware at a time. Check the device LED: green means it's in use, blue means it's available.
+3. **Unplug and replug** the device, then try again.
+
+### Hardware: "in use by another session"
+
+This means the file lock (`~/.bluespy-mcp.lock`) is held by another MCP session. If no other session is actually running (e.g., a previous session crashed), use the `force` parameter:
+
+```
+connect_hardware(force=True)
+```
+
+This removes the stale lock file and proceeds with the connection.
 
 ### Hardware: Python crash on exit
 
