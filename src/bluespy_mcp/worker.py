@@ -6,6 +6,43 @@ results back.
 
 This module imports bluespy lazily — it's only loaded when a command
 is first received, keeping the import cost in the subprocess.
+
+USB Lifecycle and Cleanup
+-------------------------
+The Moreph hardware has firmware-level USB session state that persists
+independently of the Python library's internal state. Three cleanup
+mechanisms exist, each operating at a different level:
+
+1. bluespy.disconnect() — Library-level cleanup. Tells the bluespy
+   library the connection is done, but the firmware still holds the USB
+   session. The device LED stays green.
+
+2. bluespy_deinit() — Library teardown. Cleans up the native library's
+   internal state (threads, memory). Does NOT release the firmware-level
+   USB session after a connect/disconnect cycle. Only effective for
+   sessions that never connected (e.g., discover-only).
+
+3. reboot_moreph() — Firmware-level reset. Reboots the device firmware,
+   fully releasing the USB session. The device LED turns blue. This is
+   the ONLY reliable way to release hardware after a connection.
+
+The worker uses reboot_moreph() at both ends of a hardware session:
+- At connect time: clears stale firmware state from previous sessions
+- At shutdown: releases the USB session (only if a connection was opened)
+
+atexit and os._exit
+-------------------
+The vendored bluespy.py registers bluespy_deinit as an atexit handler.
+We must prevent this from running in the subprocess because:
+
+- multiprocessing.Process calls os._exit() after the target function
+  returns, so atexit handlers never run in normal subprocess exit anyway.
+- If SIGTERM arrives (parent exit kills daemon children), Python raises
+  SystemExit → atexit → bluespy_deinit → SIGSEGV in the native library.
+- We install a SIGTERM handler that calls os._exit(0) to prevent this.
+- For normal shutdown, we call os._exit(0) explicitly after cleanup.
+
+See docs/hardware-lifecycle.md for the full debugging history.
 """
 
 from __future__ import annotations
@@ -124,9 +161,8 @@ def worker_loop(cmd_queue, result_queue):
     # Signal ready
     result_queue.put({"ok": True, "data": {"status": "ready"}})
 
-    # Track whether we opened a hardware connection. Only sessions that
-    # connect need bluespy_deinit on exit — discover-only sessions can
-    # skip it to avoid an unnecessary USB recovery delay.
+    # Track whether we opened a hardware connection so we know
+    # whether USB release is needed on exit.
     was_connected = False
 
     while True:
@@ -151,18 +187,20 @@ def worker_loop(cmd_queue, result_queue):
             was_connected = True
         result_queue.put(result)
 
-    # Explicit deinit releases the USB handle (turns LED blue).
-    # We call it here instead of relying on atexit because os._exit
-    # below skips atexit handlers (atexit path can SIGSEGV on SIGTERM).
-    # Only needed after a real connection — discover-only sessions don't
-    # hold a deep USB handle, and deinit would cause an unnecessary
-    # recovery delay (~2s) that could break the next connection attempt.
+    # After a hardware session, reboot the device to fully release
+    # the USB handle (turns LED blue). bluespy_deinit alone doesn't
+    # release USB after a connect/disconnect cycle, and
+    # multiprocessing.Process calls os._exit internally so atexit
+    # handlers never run in subprocesses anyway.
     if was_connected:
         try:
-            bluespy._libbluespy.bluespy_deinit()
+            bluespy.reboot_moreph(-1)
         except Exception:
             pass
 
+    # os._exit skips atexit handlers (bluespy_deinit → SIGSEGV on
+    # SIGTERM). The reboot above handles USB release; the OS cleans
+    # up file descriptors and memory on process exit.
     if multiprocessing.current_process().name != "MainProcess":
         time.sleep(0.1)  # Let result queue flush
         os._exit(0)

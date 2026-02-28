@@ -4,6 +4,29 @@
 All bluespy hardware calls run in a child subprocess to prevent ctypes
 hangs from freezing the MCP server. A file lock ensures only one MCP
 client uses the hardware at a time.
+
+Architecture overview:
+
+    MCP Server (main process)
+        │
+        ├── HardwareManager (state machine: IDLE ↔ CONNECTED ↔ CAPTURING)
+        │       │
+        │       ├── File lock (~/.bluespy-mcp.lock) for single-client access
+        │       ├── Worker subprocess (daemon) via multiprocessing.Process
+        │       │       └── bluespy module (ctypes FFI to libblueSPY)
+        │       └── Command/result queues for IPC
+        │
+        └── CaptureManager (file analysis, no hardware)
+
+Each hardware session follows this lifecycle:
+
+    1. connect()  → acquire lock → spawn worker → reboot device → connect
+    2. capture()  → start/stop capture via worker commands
+    3. disconnect() → disconnect → shutdown worker (reboot to release USB)
+
+The worker subprocess is killed and respawned for each connect() call.
+Retry logic (3 attempts, 2s delay) handles USB recovery timing between
+worker process exits. See worker.py docstring for USB lifecycle details.
 """
 
 from __future__ import annotations
@@ -152,12 +175,12 @@ class HardwareManager:
     def _kill_worker(self) -> None:
         """Kill the worker subprocess.
 
-        Tries to let the worker exit cleanly first (os._exit skips atexit),
-        falling back to SIGKILL if it doesn't exit within 2 seconds.
+        Waits up to 5 seconds for clean exit (worker calls reboot_moreph
+        to release USB, then os._exit). Falls back to SIGKILL if the
+        worker hangs.
         """
         if self._process and self._process.is_alive():
-            # Give worker time to exit cleanly via os._exit
-            self._process.join(timeout=2)
+            self._process.join(timeout=5)
             if self._process.is_alive():
                 self._process.kill()
                 self._process.join(timeout=2)
