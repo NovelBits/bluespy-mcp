@@ -67,20 +67,86 @@ def _data_available() -> bool:
     return _capture.is_loaded or _hardware.state == HardwareState.CAPTURING
 
 
-# --- MCP Resource ---
+# --- MCP Resources ---
 
 
-@mcp.resource("capture://status")
-def capture_status() -> str:
-    """Current capture file status and metadata."""
-    if not _capture.is_loaded:
-        return _json({"status": "no_file_loaded"})
-    try:
-        meta = _capture.get_metadata()
-        meta["status"] = "loaded"
-        return _json(meta)
-    except Exception as e:
-        return _json({"status": "error", "error": str(e)})
+@mcp.resource("bluespy://hardware")
+def hardware_resource() -> str:
+    """Current hardware connection status."""
+    return _json(_hardware.get_status())
+
+
+@mcp.resource("bluespy://capture")
+def capture_resource() -> str:
+    """Current capture state — file or live."""
+    hw_state = _hardware.state
+
+    if hw_state == HardwareState.CAPTURING:
+        status = _hardware.get_status()
+        status["mode"] = "live"
+        try:
+            status["packet_count"] = _hardware.get_packet_count()
+        except Exception:
+            pass
+        return _json(status)
+
+    if _capture.is_loaded:
+        try:
+            meta = _capture.get_metadata()
+            meta["mode"] = "file"
+            return _json(meta)
+        except Exception as e:
+            return _json({"mode": "error", "error": str(e)})
+
+    return _json({"mode": "idle"})
+
+
+# --- Prompt Templates ---
+
+
+@mcp.prompt()
+def analyze_capture(file_path: str) -> str:
+    """Full analysis workflow for a capture file."""
+    return (
+        f"Please analyze the Bluetooth LE capture file at: {file_path}\n\n"
+        "Follow these steps:\n"
+        "1. Load the capture file with load_capture()\n"
+        "2. Get a capture_summary() to understand what's in the file\n"
+        "3. Check find_capture_errors() for any protocol errors or disconnects\n"
+        "4. Use list_devices() and inspect_advertising() for the most active device\n"
+        "5. Use list_connections() and inspect_connection() for each connection\n"
+        "6. Summarize your findings: devices seen, connection quality, any issues found"
+    )
+
+
+@mcp.prompt()
+def quick_capture(duration_seconds: str = "10") -> str:
+    """End-to-end live capture workflow."""
+    return (
+        f"Please capture Bluetooth LE traffic for {duration_seconds} seconds.\n\n"
+        "Follow these steps:\n"
+        "1. Use discover_hardware() to confirm a BlueSPY sniffer is connected\n"
+        "2. Use connect_hardware() to connect to the sniffer\n"
+        f"3. Use start_capture(duration_seconds={duration_seconds}) to capture\n"
+        "4. Report what was captured: file path, packet count, duration\n"
+        "5. Ask if I'd like to analyze the capture or disconnect"
+    )
+
+
+@mcp.prompt()
+def debug_connection(file_path: str) -> str:
+    """Connection debugging workflow."""
+    return (
+        f"Please debug the Bluetooth LE connections in: {file_path}\n\n"
+        "Follow these steps:\n"
+        "1. Load the capture file with load_capture()\n"
+        "2. Use list_connections() to find all connections\n"
+        "3. Use inspect_connection() for each connection found\n"
+        "4. Use find_capture_errors() to identify errors and disconnects\n"
+        "5. Search for specific error types with search_packets()\n"
+        "6. Report: connection parameters, packet distribution, errors found, "
+        "likely root cause of any issues"
+    )
 
 
 # --- File Management Tools ---

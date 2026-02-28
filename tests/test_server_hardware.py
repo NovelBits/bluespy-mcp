@@ -151,3 +151,89 @@ class TestAnalysisToolGuards:
             mock_cap.is_loaded = True
             from bluespy_mcp.server import _data_available
             assert _data_available() is True
+
+
+class TestResources:
+    def test_hardware_resource(self, mock_hardware_mgr):
+        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
+            from bluespy_mcp.server import hardware_resource
+            result = json.loads(hardware_resource())
+        assert result["state"] == "idle"
+
+    def test_capture_resource_no_data(self, mock_hardware_mgr):
+        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
+            with patch("bluespy_mcp.server._capture") as mock_cap:
+                mock_cap.is_loaded = False
+                from bluespy_mcp.server import capture_resource
+                result = json.loads(capture_resource())
+        assert result["mode"] == "idle"
+
+    def test_capture_resource_live_mode(self, mock_hardware_mgr):
+        from bluespy_mcp.hardware import HardwareState
+        mock_hardware_mgr.state = HardwareState.CAPTURING
+        mock_hardware_mgr.get_status.return_value = {
+            "state": "capturing", "serial": 0x00010100,
+            "capturing": True, "capture_file": "/tmp/live.pcapng",
+        }
+        mock_hardware_mgr.get_packet_count.return_value = 42
+        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
+            from bluespy_mcp.server import capture_resource
+            result = json.loads(capture_resource())
+        assert result["mode"] == "live"
+        assert result["packet_count"] == 42
+
+    def test_capture_resource_file_mode(self, mock_hardware_mgr):
+        from bluespy_mcp.hardware import HardwareState
+        mock_hardware_mgr.state = HardwareState.IDLE
+        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr), \
+             patch("bluespy_mcp.server._capture") as mock_cap:
+            mock_cap.is_loaded = True
+            mock_cap.get_metadata.return_value = {
+                "file_path": "/tmp/saved.pcapng", "packet_count": 300
+            }
+            from bluespy_mcp.server import capture_resource
+            result = json.loads(capture_resource())
+        assert result["mode"] == "file"
+
+    def test_hardware_resource_when_capturing(self, mock_hardware_mgr):
+        mock_hardware_mgr.get_status.return_value = {
+            "state": "capturing", "serial": 0x00010100,
+            "capturing": True, "capture_file": "/tmp/live.pcapng",
+            "capture_elapsed_seconds": 12.5,
+        }
+        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
+            from bluespy_mcp.server import hardware_resource
+            result = json.loads(hardware_resource())
+        assert result["capturing"] is True
+        assert result["capture_elapsed_seconds"] == 12.5
+
+
+class TestPromptTemplates:
+    """Test prompt templates render with correct arguments."""
+
+    def test_analyze_capture_includes_file_path(self):
+        from bluespy_mcp.server import analyze_capture
+        result = analyze_capture(file_path="/tmp/test.pcapng")
+        assert "/tmp/test.pcapng" in result
+        assert "load_capture" in result
+        assert "capture_summary" in result
+
+    def test_quick_capture_includes_duration(self):
+        from bluespy_mcp.server import quick_capture
+        result = quick_capture(duration_seconds="30")
+        assert "30" in result
+        assert "connect_hardware" in result
+        assert "start_capture" in result
+
+    def test_quick_capture_default_duration(self):
+        from bluespy_mcp.server import quick_capture
+        result = quick_capture()
+        assert "10" in result
+
+    def test_debug_connection_includes_file_path(self):
+        from bluespy_mcp.server import debug_connection
+        result = debug_connection(file_path="/tmp/debug.pcapng")
+        assert "/tmp/debug.pcapng" in result
+        assert "list_connections" in result
+        assert "inspect_connection" in result
+        assert "find_capture_errors" in result
