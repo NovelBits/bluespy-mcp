@@ -39,8 +39,14 @@ Issues = "https://github.com/novelbits/bluespy-mcp/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bluespy_mcp"]
 
+[project.optional-dependencies]
+e2e = ["claude-agent-sdk"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
 markers = [
     "hardware: tests requiring BlueSPY hardware and dylib (deselect with '-m \"not hardware\"')",
+    "e2e: end-to-end tests using Claude agent SDK (deselect with '-m \"not e2e\"')",
+    "file_only: e2e tests that only need capture files, no hardware",
 ]
