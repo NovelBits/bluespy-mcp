@@ -23,14 +23,6 @@ def _make_mock_bluespy():
 class TestWorkerCommands:
     """Test individual command handlers in the worker."""
 
-    def test_discover_returns_serials(self):
-        from bluespy_mcp.worker import handle_command
-
-        mock = _make_mock_bluespy()
-        result = handle_command(mock, {"cmd": "discover"})
-        assert result["ok"] is True
-        assert result["data"]["serials"] == [0x00010100]
-
     def test_connect_calls_reboot_then_connect(self):
         from bluespy_mcp.worker import handle_command
 
@@ -230,7 +222,7 @@ class TestWorkerLoop:
 
         cmd_q = mp.Queue()
         result_q = mp.Queue()
-        cmd_q.put({"cmd": "discover"})
+        cmd_q.put({"cmd": "connect", "serial": -1})
         cmd_q.put({"cmd": "shutdown"})
 
         with patch("bluespy_mcp.loader.get_bluespy") as mock_get:
@@ -243,7 +235,7 @@ class TestWorkerLoop:
 
         ready = result_q.get(timeout=1)
         assert ready["ok"] is True  # ready signal
-        discover_result = result_q.get(timeout=1)
-        assert discover_result["ok"] is True  # discover result
+        connect_result = result_q.get(timeout=1)
+        assert connect_result["ok"] is True  # connect result
         shutdown_result = result_q.get(timeout=1)
         assert shutdown_result["data"]["status"] == "shutdown"

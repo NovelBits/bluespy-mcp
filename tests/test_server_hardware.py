@@ -20,23 +20,6 @@ def mock_hardware_mgr():
     return mgr
 
 
-class TestDiscoverHardware:
-    def test_returns_serials(self, mock_hardware_mgr):
-        mock_hardware_mgr.discover.return_value = {"serials": [0x00010100]}
-        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
-            from bluespy_mcp.server import discover_hardware
-            result = json.loads(discover_hardware())
-        assert result["serials"] == [0x00010100]
-
-    def test_handles_error(self, mock_hardware_mgr):
-        from bluespy_mcp.hardware import HardwareError
-        mock_hardware_mgr.discover.side_effect = HardwareError("No devices")
-        with patch("bluespy_mcp.server._hardware", mock_hardware_mgr):
-            from bluespy_mcp.server import discover_hardware
-            result = json.loads(discover_hardware())
-        assert "error" in result
-
-
 class TestConnectHardware:
     def test_connect_success(self, mock_hardware_mgr):
         mock_hardware_mgr.connect.return_value = {

@@ -128,21 +128,24 @@ where the USB device hasn't recovered from a previous worker exit.
 `connect()` retries the full spawn+connect sequence. Handles the case
 where `bluespy_init()` succeeds (health check passes) but heavier
 operations like `reboot_moreph()` and `bluespy_connect()` fail because
-USB recovery is incomplete. This commonly occurs when `discover_hardware()`
-is called right before `connect_hardware()`.
+USB recovery is incomplete.
 
-## Discover vs. Connect Sessions
+## Why discover_hardware() Was Removed
 
-**Discover-only sessions** spawn a worker, call `connected_morephs()`,
-then shut down. No `connect()` is called, so no reboot is needed at
-exit. The worker exits cleanly without touching the USB session.
+The original `discover_hardware()` tool called `connected_morephs()` to
+list available devices. However, `connected_morephs()` only returns
+devices with an active `bluespy.connect()` session — it does NOT
+enumerate USB-connected devices. This meant discover always returned an
+empty list unless something else had already connected.
 
-**Connect sessions** open a full hardware connection. The exit reboot
-is essential — without it, the device LED stays green and the USB
-session persists until the device is physically unplugged.
+Since `connect_hardware(serial=-1)` handles first-available device
+selection internally (via `bluespy.connect(-1)`), and there's no
+way to enumerate devices without connecting, discover was removed
+entirely in v1.1.
 
-The worker tracks this with a `was_connected` flag, set to `True` only
-when a connect command succeeds.
+The worker tracks whether a connection was opened with a `was_connected`
+flag, set to `True` only when a connect command succeeds. This
+determines whether a firmware reboot is needed at shutdown.
 
 ## File Lock
 

@@ -258,13 +258,6 @@ class TestHardwareIntegration:
     tests share one connection via a class-scoped fixture.
     """
 
-    def test_discover_returns_serial_list(self):
-        """Discover is stateless — no connection required."""
-        from bluespy_mcp.hardware import HardwareManager
-        mgr = HardwareManager()
-        result = mgr.discover()
-        assert isinstance(result["serials"], list)
-
     def test_full_hardware_lifecycle(self, tmp_path):
         """Single test covering connect, timed capture, manual capture, disconnect.
 

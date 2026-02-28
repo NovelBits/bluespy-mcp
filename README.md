@@ -162,8 +162,7 @@ Add to your MCP server configuration:
 
 | Tool | Description |
 |------|-------------|
-| `discover_hardware()` | List connected Moreph serial numbers |
-| `connect_hardware(serial, force)` | Connect to hardware (reboots first, acquires lock) |
+| `connect_hardware(serial, force)` | Connect to first available device (or specify serial) |
 | `disconnect_hardware()` | Disconnect from hardware |
 | `start_capture(filename, duration_seconds, LE, CL, QHS, wifi, CS)` | Start live capture |
 | `stop_capture()` | Stop active capture |
@@ -187,17 +186,12 @@ Add to your MCP server configuration:
 
 ## Live Hardware Capture
 
-If you have a BlueSPY sniffer connected via USB, the MCP server can control it directly — discover devices, start/stop captures, and analyze results in real time.
+If you have a BlueSPY sniffer connected via USB, the MCP server can control it directly — connect, start/stop captures, and analyze results in real time.
 
 ```
-You: What hardware is connected?
+You: Connect to my sniffer and capture Bluetooth LE traffic for 10 seconds.
 
-Claude: Found 1 Moreph device:
-  → Serial: 2411001234
-
-You: Connect to it and capture Bluetooth LE traffic for 10 seconds.
-
-Claude: Connected to device 2411001234.
+Claude: Connected to Moreph serial 2411001234.
   Capturing Bluetooth LE packets for 10 seconds...
   Capture complete — saved to ble_capture_20260228.pcapng (12,847 packets).
 

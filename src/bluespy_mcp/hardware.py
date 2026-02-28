@@ -49,7 +49,6 @@ _DEFAULT_CAPTURES_DIR = Path(os.environ.get("BLE_CAPTURES_DIR", "captures"))
 
 # Timeouts per operation (seconds)
 _TIMEOUTS = {
-    "discover": 5,
     "connect": 30,
     "disconnect": 5,
     "start_capture": 10,
@@ -216,18 +215,6 @@ class HardwareManager:
                 "If the device LED is green, close the BlueSPY desktop app "
                 "or unplug/replug the USB cable."
             )
-
-    def discover(self) -> dict:
-        """Discover connected Moreph hardware. Does not require connection."""
-        self._spawn_worker()
-        try:
-            result = self._send_command({"cmd": "discover"})
-            if not result["ok"]:
-                raise HardwareError(result["error"])
-            return result["data"]
-        finally:
-            self._send_command({"cmd": "shutdown"}, timeout=5)
-            self._kill_worker()
 
     def connect(self, serial: int = -1, force: bool = False) -> dict:
         """Connect to hardware: acquire lock -> spawn worker -> reboot -> connect.

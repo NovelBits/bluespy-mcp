@@ -74,11 +74,7 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
     action = cmd.get("cmd")
 
     try:
-        if action == "discover":
-            serials = bluespy.connected_morephs()
-            return {"ok": True, "data": {"serials": serials}}
-
-        elif action == "connect":
+        if action == "connect":
             serial = cmd.get("serial", -1)
             # Always reboot first to clear stale hardware state
             try:

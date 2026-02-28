@@ -149,7 +149,7 @@ class TestTimeoutAndRecovery:
         """Sending command without worker raises clear error."""
         mgr = HardwareManager()
         with pytest.raises(HardwareError, match="Worker not running"):
-            mgr._send_command({"cmd": "discover"})
+            mgr._send_command({"cmd": "connect"})
 
 
 class TestFullTransitionChain:

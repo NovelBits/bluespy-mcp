@@ -125,11 +125,10 @@ def quick_capture(duration_seconds: str = "10") -> str:
     return (
         f"Please capture Bluetooth LE traffic for {duration_seconds} seconds.\n\n"
         "Follow these steps:\n"
-        "1. Use discover_hardware() to confirm a BlueSPY sniffer is connected\n"
-        "2. Use connect_hardware() to connect to the sniffer\n"
-        f"3. Use start_capture(duration_seconds={duration_seconds}) to capture\n"
-        "4. Report what was captured: file path, packet count, duration\n"
-        "5. Ask if I'd like to analyze the capture or disconnect"
+        "1. Use connect_hardware() to connect to the BlueSPY sniffer\n"
+        f"2. Use start_capture(duration_seconds={duration_seconds}) to capture\n"
+        "3. Report what was captured: file path, packet count, duration\n"
+        "4. Ask if I'd like to analyze the capture or disconnect"
     )
 
 
@@ -206,20 +205,6 @@ def list_captures(directory: str | None = None) -> str:
 
 
 # --- Hardware Tools ---
-
-
-@mcp.tool
-def discover_hardware() -> str:
-    """Discover connected BlueSPY Moreph hardware.
-
-    Lists serial numbers of all Moreph devices connected via USB.
-    Does not require an active connection.
-    """
-    try:
-        data = _hardware.discover()
-        return _json({"serials": data["serials"], "count": len(data["serials"])})
-    except HardwareError as e:
-        return _error(str(e))
 
 
 @mcp.tool
