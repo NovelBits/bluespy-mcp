@@ -97,27 +97,43 @@ class HardwareManager:
                 pass
             self._lock_fd = None
 
-    def _spawn_worker(self) -> None:
-        """Spawn the hardware worker subprocess."""
+    def _spawn_worker(self, retries: int = 3, retry_delay: float = 2.0) -> None:
+        """Spawn the hardware worker subprocess.
+
+        Retries on failure because the USB device may need recovery time
+        after a previous subprocess exits.
+        """
         from bluespy_mcp.worker import worker_loop
 
-        self._cmd_queue = mp.Queue()
-        self._result_queue = mp.Queue()
-        self._process = mp.Process(
-            target=worker_loop,
-            args=(self._cmd_queue, self._result_queue),
-            daemon=True,
-        )
-        self._process.start()
+        last_error = None
+        for attempt in range(retries):
+            self._cmd_queue = mp.Queue()
+            self._result_queue = mp.Queue()
+            self._process = mp.Process(
+                target=worker_loop,
+                args=(self._cmd_queue, self._result_queue),
+                daemon=True,
+            )
+            self._process.start()
 
-        # Wait for ready signal
-        try:
-            result = self._result_queue.get(timeout=30)
-            if not result.get("ok"):
-                raise HardwareError(f"Worker failed to start: {result.get('error')}")
-        except Exception as e:
+            try:
+                result = self._result_queue.get(timeout=30)
+                if result.get("ok"):
+                    return  # Worker ready
+                last_error = result.get("error", "unknown error")
+            except Exception as e:
+                last_error = str(e)
+
+            # Worker failed — clean up and retry after delay
             self._kill_worker()
-            raise HardwareError(f"Worker subprocess failed to start: {e}")
+            if attempt < retries - 1:
+                logger.info(
+                    f"Worker failed to start (attempt {attempt + 1}/{retries}): "
+                    f"{last_error}. Retrying in {retry_delay}s..."
+                )
+                time.sleep(retry_delay)
+
+        raise HardwareError(f"Worker failed to start after {retries} attempts: {last_error}")
 
     def _kill_worker(self) -> None:
         """Kill the worker subprocess.

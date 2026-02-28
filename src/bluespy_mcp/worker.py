@@ -11,8 +11,10 @@ is first received, keeping the import cost in the subprocess.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import queue
+import signal
 import time
 from typing import Any
 
@@ -102,11 +104,21 @@ def worker_loop(cmd_queue, result_queue):
     """
     from bluespy_mcp.loader import get_bluespy
 
+    # If we're in a subprocess, intercept SIGTERM so that when the parent
+    # exits (killing daemon children), we skip atexit handlers. Without
+    # this, SIGTERM → SystemExit → atexit → bluespy_deinit → SIGSEGV.
+    if multiprocessing.current_process().name != "MainProcess":
+        signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
+
     try:
         bluespy = get_bluespy()
-    except ImportError as e:
-        # Signal that we can't start
+        # Verify bluespy is functional — bluespy_init can fail silently,
+        # leaving the module loaded but hardware operations broken.
+        bluespy.connected_morephs()
+    except Exception as e:
         result_queue.put({"ok": False, "error": f"Failed to load BlueSPY: {e}"})
+        if multiprocessing.current_process().name != "MainProcess":
+            os._exit(1)
         return
 
     # Signal ready
@@ -132,14 +144,10 @@ def worker_loop(cmd_queue, result_queue):
         result = handle_command(bluespy, cmd)
         result_queue.put(result)
 
-    # Explicitly deinit the C library to release USB handles, then
-    # os._exit to prevent atexit from calling bluespy_deinit again
-    # (double-call can SIGSEGV when Python is partially torn down).
-    import multiprocessing
+    # os._exit skips atexit handlers (bluespy_deinit → SIGSEGV) and
+    # avoids a USB recovery delay that bluespy_deinit introduces.
+    # The OS cleans up file descriptors and USB handles on process exit.
+    # We already called bluespy.disconnect() in the shutdown handler.
     if multiprocessing.current_process().name != "MainProcess":
-        try:
-            bluespy._libbluespy.bluespy_deinit()
-        except Exception:
-            pass
         time.sleep(0.1)  # Let result queue flush
         os._exit(0)
