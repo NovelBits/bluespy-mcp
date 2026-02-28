@@ -25,6 +25,7 @@ from bluespy_mcp.analyzer import (
     summarize_capture,
 )
 from bluespy_mcp.capture import CaptureManager
+from bluespy_mcp.hardware import HardwareManager, HardwareError, HardwareState
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ mcp = FastMCP(
 
 _capture = CaptureManager()
 _captures_dir = Path(os.environ.get("BLE_CAPTURES_DIR", "captures"))
+_hardware = HardwareManager()
 
 
 def _json(data: Any) -> str:
@@ -51,6 +53,18 @@ def _error(message: str) -> str:
 
 def _not_loaded() -> str:
     return _error("No capture file loaded. Use load_capture() first.")
+
+
+def _not_ready() -> str:
+    return _error(
+        "No data available. Load a capture file with load_capture() "
+        "or start a live capture with start_capture()."
+    )
+
+
+def _data_available() -> bool:
+    """Check if packet data is available (file loaded or live capture)."""
+    return _capture.is_loaded or _hardware.state == HardwareState.CAPTURING
 
 
 # --- MCP Resource ---
@@ -125,6 +139,112 @@ def list_captures(directory: str | None = None) -> str:
     })
 
 
+# --- Hardware Tools ---
+
+
+@mcp.tool
+def discover_hardware() -> str:
+    """Discover connected BlueSPY Moreph hardware.
+
+    Lists serial numbers of all Moreph devices connected via USB.
+    Does not require an active connection.
+    """
+    try:
+        data = _hardware.discover()
+        return _json({"serials": data["serials"], "count": len(data["serials"])})
+    except HardwareError as e:
+        return _error(str(e))
+
+
+@mcp.tool
+def connect_hardware(serial: int = -1) -> str:
+    """Connect to BlueSPY Moreph hardware for live capture.
+
+    Reboots the device first to ensure clean state, then connects.
+    Only one MCP client can use the hardware at a time.
+
+    Args:
+        serial: Moreph serial number (hex integer). Use -1 for first available device.
+    """
+    if _capture.is_loaded:
+        return _error(
+            "A capture file is currently loaded. Close it with close_capture() "
+            "before connecting to hardware."
+        )
+    try:
+        data = _hardware.connect(serial)
+        return _json({"success": True, **data})
+    except HardwareError as e:
+        return _json({"success": False, "error": str(e)})
+
+
+@mcp.tool
+def disconnect_hardware() -> str:
+    """Disconnect from BlueSPY hardware.
+
+    If a capture is in progress, it will be stopped first.
+    """
+    try:
+        data = _hardware.disconnect()
+        return _json({"success": True, **data})
+    except (HardwareError, RuntimeError) as e:
+        return _json({"success": False, "error": str(e)})
+
+
+@mcp.tool
+def start_capture(
+    filename: str | None = None,
+    duration_seconds: float | None = None,
+    LE: bool = True,
+    CL: bool = False,
+    QHS: bool = False,
+    wifi: bool = False,
+    CS: bool = False,
+) -> str:
+    """Start a live Bluetooth capture.
+
+    Args:
+        filename: Path to save the .pcapng file. Auto-generated if not provided.
+        duration_seconds: Capture duration in seconds. If set, capture runs for
+                         this duration then stops automatically. If None, capture
+                         runs until stop_capture() is called.
+        LE: Enable Bluetooth LE capture (default True).
+        CL: Enable Bluetooth Classic capture.
+        QHS: Enable Qualcomm High Speed capture.
+        wifi: Enable WiFi capture.
+        CS: Enable Channel Sounding capture.
+    """
+    try:
+        data = _hardware.start_capture(
+            filename=filename, duration_seconds=duration_seconds,
+            LE=LE, CL=CL, QHS=QHS, wifi=wifi, CS=CS,
+        )
+        return _json({"success": True, **data})
+    except (HardwareError, RuntimeError) as e:
+        return _json({"success": False, "error": str(e)})
+
+
+@mcp.tool
+def stop_capture() -> str:
+    """Stop the active live capture.
+
+    Returns the file path, packet count, and duration of the capture.
+    The file is NOT automatically loaded for analysis — use load_capture()
+    to analyze it, or disconnect and save it for later.
+    """
+    try:
+        data = _hardware.stop_capture()
+        return _json({"success": True, **data})
+    except (HardwareError, RuntimeError) as e:
+        return _json({"success": False, "error": str(e)})
+
+
+@mcp.tool
+def hardware_status() -> str:
+    """Get current hardware connection and capture status."""
+    return _json(_hardware.get_status())
+
+
 # --- Discovery Tools ---
 
 
@@ -135,8 +255,8 @@ def capture_summary() -> str:
     Returns packet counts by type, device list, connection list,
     capture duration, and other metadata.
     """
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         return _json(summarize_capture(_capture))
     except Exception as e:
@@ -146,8 +266,8 @@ def capture_summary() -> str:
 @mcp.tool
 def list_devices() -> str:
     """List all Bluetooth devices found in the loaded capture."""
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         devices = _capture.get_devices()
         return _json({
@@ -161,8 +281,8 @@ def list_devices() -> str:
 @mcp.tool
 def list_connections() -> str:
     """List all Bluetooth connections found in the loaded capture."""
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         connections = _capture.get_connections()
         return _json({
@@ -191,8 +311,8 @@ def search_packets(
         channel: Filter by Bluetooth channel number.
         max_results: Maximum results to return (default 100).
     """
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         results = find_packets(
             _capture,
@@ -213,8 +333,8 @@ def inspect_connection(connection_index: int = 0) -> str:
     Args:
         connection_index: Which connection to analyze (0-based index from list_connections).
     """
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         return _json(analyze_connection(_capture, connection_index))
     except Exception as e:
@@ -228,8 +348,8 @@ def inspect_advertising(device_index: int = 0) -> str:
     Args:
         device_index: Which device to analyze (0-based index from list_devices).
     """
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         return _json(analyze_advertising(_capture, device_index))
     except Exception as e:
@@ -243,8 +363,8 @@ def find_capture_errors(max_results: int = 100) -> str:
     Args:
         max_results: Maximum number of errors to return (default 100).
     """
-    if not _capture.is_loaded:
-        return _not_loaded()
+    if not _data_available():
+        return _not_ready()
     try:
         errors = find_errors(_capture, max_results=max_results)
         return _json({"count": len(errors), "errors": errors})
