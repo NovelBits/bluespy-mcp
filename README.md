@@ -226,6 +226,18 @@ Use `load_capture()` with a path to your .pcapng file before calling analysis to
 
 If you're using FastMCP v3.0.2+, ensure the server runs with `show_banner=False` (this is the default in bluespy-mcp). The FastMCP banner corrupts the MCP stdio protocol.
 
+### Hardware: "bluespy_init failed"
+
+The MCP server retries automatically when this happens, but if it persists:
+
+1. **Connect directly to your computer** — do not use a USB hub. The Moreph sniffer requires a direct USB connection for reliable communication.
+2. **Unplug and replug** the device, then try again.
+3. **Close other BlueSPY sessions** — only one client can control the hardware at a time. The file lock (`~/.bluespy-mcp.lock`) enforces this, but a stale lock from a crashed session may need manual removal.
+
+### Hardware: Python crash on exit
+
+You may see a macOS crash report (`Python quit unexpectedly`) after using hardware tools. This is a known issue with the BlueSPY native library's cleanup routine (`bluespy_deinit`) and does not affect capture data or MCP server operation. The crash occurs during process exit and can be safely dismissed.
+
 ### Module not found errors
 
 Ensure you're using Python 3.10+ and have installed the package:
