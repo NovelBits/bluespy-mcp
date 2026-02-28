@@ -65,8 +65,8 @@ class ToolTracker:
 
     Works in two modes:
     1. As a ``can_use_tool`` callback to deny forbidden tools before execution.
-    2. Via ``record_from_messages()`` to extract ToolUse/ToolResult pairs from
-       the streamed assistant messages after the run completes.
+    2. Via ``record_tool_use()`` and ``record_tool_result()`` called from the
+       message stream handler to extract ToolUse/ToolResult pairs.
     """
 
     def __init__(self, forbidden_tools: list[str] | None = None) -> None:
@@ -240,8 +240,15 @@ class Scenario:
         self.model = MODEL_MAP.get(model, model)
         self.mcp_config = mcp_config
 
-    async def run(self) -> ScenarioResult:
-        """Execute the scenario and return a :class:`ScenarioResult`."""
+    async def run(self, cost_tracker: Any = None) -> ScenarioResult:
+        """Execute the scenario and return a :class:`ScenarioResult`.
+
+        Parameters
+        ----------
+        cost_tracker : CostTracker | None
+            Session-level cost tracker from conftest. If provided, the
+            scenario's cost is added to the cumulative session total.
+        """
         tracker = ToolTracker(forbidden_tools=self.forbidden_tools)
 
         # Resolve MCP config
@@ -261,21 +268,25 @@ class Scenario:
         cost_usd = 0.0
         duration_ms = 0
         model_used = self.model
+        error: str | None = None
 
-        async for message in query(prompt=self.prompt, options=options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, ToolUseBlock):
-                        tracker.record_tool_use(block)
-                    elif isinstance(block, ToolResultBlock):
-                        tracker.record_tool_result(block)
-                    elif isinstance(block, TextBlock):
-                        final_text = block.text
-                model_used = message.model or self.model
+        try:
+            async for message in query(prompt=self.prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, ToolUseBlock):
+                            tracker.record_tool_use(block)
+                        elif isinstance(block, ToolResultBlock):
+                            tracker.record_tool_result(block)
+                        elif isinstance(block, TextBlock):
+                            final_text = block.text
+                    model_used = message.model or self.model
 
-            elif isinstance(message, ResultMessage):
-                cost_usd = message.total_cost_usd or 0.0
-                duration_ms = message.duration_ms or 0
+                elif isinstance(message, ResultMessage):
+                    cost_usd = message.total_cost_usd or 0.0
+                    duration_ms = message.duration_ms or 0
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
 
         # Flush any unmatched pending tool calls
         tracker.flush_pending()
@@ -291,14 +302,50 @@ class Scenario:
             model=model_used,
         )
 
-        # Persist result log
-        self._save_result(result)
+        # Persist result log (always, even on error)
+        self._save_result(result, error=error)
+
+        # Session-level cost tracking
+        if cost_tracker is not None:
+            cost_tracker.add(cost_usd)
+
+        # Per-scenario budget enforcement
+        if cost_usd > self.max_budget:
+            raise RuntimeError(
+                f"Scenario exceeded budget: ${cost_usd:.4f} > ${self.max_budget:.2f}"
+            )
+
+        # Re-raise SDK errors after logging
+        if error:
+            raise RuntimeError(f"Scenario failed: {error}")
+
+        # Validate expected tool sequences
+        if self.expect_tools is not None:
+            if not result.tools_in_order(self.expect_tools):
+                called = [tc.name for tc in result.tool_calls]
+                raise AssertionError(
+                    f"Tool sequence mismatch.\n"
+                    f"  Expected: {self.expect_tools}\n"
+                    f"  Actual:   {called}"
+                )
+
+        if self.expect_tools_subset is not None:
+            missing = [
+                t for t in self.expect_tools_subset
+                if not result.tool_was_called(t)
+            ]
+            if missing:
+                called = [tc.name for tc in result.tool_calls]
+                raise AssertionError(
+                    f"Expected tools not called: {missing}\n"
+                    f"  Actual calls: {called}"
+                )
 
         return result
 
     # -- Result logging ------------------------------------------------------
 
-    def _save_result(self, result: ScenarioResult) -> None:
+    def _save_result(self, result: ScenarioResult, *, error: str | None = None) -> None:
         """Write a JSON log file under ``tests/e2e/results/``."""
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -306,13 +353,14 @@ class Scenario:
         slug = "".join(c if c.isalnum() else "_" for c in self.prompt[:40]).strip("_")
         filename = f"{ts}_{slug}.json"
 
-        payload = {
+        payload: dict[str, Any] = {
             "timestamp": ts,
             "model": result.model,
             "prompt": self.prompt,
             "cost_usd": result.cost_usd,
             "duration_s": result.duration_s,
             "final_text": result.final_text,
+            "error": error,
             "tool_calls": [
                 {
                     "name": tc.name,
