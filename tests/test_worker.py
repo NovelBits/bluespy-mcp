@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests.conftest import MockPacket, MockPackets, MockDevice, MockConnection
+
 
 def _make_mock_bluespy():
     """Create a mock bluespy module for worker tests."""
@@ -239,3 +241,116 @@ class TestWorkerLoop:
         assert connect_result["ok"] is True  # connect result
         shutdown_result = result_q.get(timeout=1)
         assert shutdown_result["data"]["status"] == "shutdown"
+
+
+def _make_mock_with_packets():
+    """Create a mock bluespy with sample packets, devices, and connections."""
+    mock = MagicMock()
+    packets = [
+        MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000000, rssi=-55, channel=37),
+        MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1100000, rssi=-58, channel=38),
+        MockPacket(summary="SCAN_REQ to AA:BB:CC:DD:EE:FF", time=1200000, rssi=-60, channel=37),
+        MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000000, rssi=-52, channel=39),
+        MockPacket(summary="ATT Read Request", time=3000000, rssi=-50, channel=5),
+        MockPacket(summary="LL_TERMINATE_IND Reason: Remote User Terminated", time=5000000, rssi=-55, channel=5),
+    ]
+    mock.packets = MockPackets(packets)
+    mock.devices = [MockDevice(), MockDevice(_address="11:22:33:44:55:66", _name="Other")]
+    mock.connections = [MockConnection()]
+    return mock
+
+
+class TestLiveAnalysisCommands:
+    """Test live analysis command handlers in the worker."""
+
+    def test_get_summary_returns_counts(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_summary"})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["packet_count"] == 6
+        assert "ADV_IND" in data["packet_type_counts"]
+        assert data["packet_type_counts"]["ADV_IND"] == 2
+        assert len(data["devices"]) == 2
+        assert len(data["connections"]) == 1
+
+    def test_get_summary_with_limit(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_summary", "limit": 3})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["packet_count"] == 6  # total count still full
+        # Only first 3 packets classified (2 ADV_IND + 1 SCAN_REQ)
+        assert sum(data["packet_type_counts"].values()) == 3
+        assert "note" in data
+
+    def test_get_packets_no_filter(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_packets"})
+        assert result["ok"] is True
+        assert result["data"]["count"] == 6
+
+    def test_get_packets_channel_filter(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_packets", "channel": 37})
+        assert result["ok"] is True
+        # channel 37: ADV_IND #1, SCAN_REQ
+        assert result["data"]["count"] == 2
+        for pkt in result["data"]["packets"]:
+            assert pkt["channel"] == 37
+
+    def test_get_packets_type_filter(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_packets", "packet_type": "ADV_IND"})
+        assert result["ok"] is True
+        assert result["data"]["count"] == 2
+
+    def test_get_packets_with_start(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_packets", "start": 4})
+        assert result["ok"] is True
+        # Packets at index 4 and 5
+        assert result["data"]["count"] == 2
+        assert result["data"]["packets"][0]["index"] == 4
+
+    def test_get_devices(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_devices"})
+        assert result["ok"] is True
+        assert result["data"]["count"] == 2
+        addresses = [d["address"] for d in result["data"]["devices"]]
+        assert "AA:BB:CC:DD:EE:FF" in addresses
+        assert "11:22:33:44:55:66" in addresses
+
+    def test_get_connections(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_connections"})
+        assert result["ok"] is True
+        assert result["data"]["count"] == 1
+        assert result["data"]["connections"][0]["summary"] != ""
+
+    def test_get_errors(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "get_errors"})
+        assert result["ok"] is True
+        # LL_TERMINATE_IND matches TERMINATE keyword
+        assert result["data"]["count"] == 1
+        assert "TERMINATE" in result["data"]["errors"][0]["summary"]

@@ -55,6 +55,14 @@ import signal
 import time
 from typing import Any
 
+from bluespy_mcp.analysis_core import (
+    summarize_packets,
+    filter_packets,
+    find_error_packets,
+    extract_device_info,
+    extract_connection_info,
+)
+
 logger = logging.getLogger(__name__)
 
 _REBOOT_WAIT_SECONDS = 3.0
@@ -121,6 +129,39 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
         elif action == "packet_count":
             count = len(bluespy.packets)
             return {"ok": True, "data": {"packet_count": count}}
+
+        elif action == "get_summary":
+            summary = summarize_packets(bluespy.packets, limit=cmd.get("limit"))
+            summary["devices"] = extract_device_info(bluespy.devices)
+            summary["connections"] = extract_connection_info(bluespy.connections)
+            return {"ok": True, "data": summary}
+
+        elif action == "get_packets":
+            results = filter_packets(
+                bluespy.packets,
+                summary_contains=cmd.get("summary_contains"),
+                packet_type=cmd.get("packet_type"),
+                channel=cmd.get("channel"),
+                max_results=cmd.get("max_results", 100),
+                start=cmd.get("start", 0),
+            )
+            return {"ok": True, "data": {"packets": results, "count": len(results)}}
+
+        elif action == "get_devices":
+            devices = extract_device_info(bluespy.devices)
+            return {"ok": True, "data": {"devices": devices, "count": len(devices)}}
+
+        elif action == "get_connections":
+            connections = extract_connection_info(bluespy.connections)
+            return {"ok": True, "data": {"connections": connections, "count": len(connections)}}
+
+        elif action == "get_errors":
+            errors = find_error_packets(
+                bluespy.packets,
+                max_results=cmd.get("max_results", 100),
+                start=cmd.get("start", 0),
+            )
+            return {"ok": True, "data": {"errors": errors, "count": len(errors)}}
 
         else:
             return {"ok": False, "error": f"Unknown command: {action}"}
