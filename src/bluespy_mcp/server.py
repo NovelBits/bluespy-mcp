@@ -33,8 +33,9 @@ mcp = FastMCP(
     "BlueSPY Sniffer",
     instructions=(
         "Bluetooth LE protocol capture analysis tools powered by the BlueSPY sniffer. "
-        "Load a .pcapng capture file, then analyze packets, devices, connections, "
-        "advertising data, and errors. Requires the BlueSPY application to be installed."
+        "Load a .pcapng capture file or start a live capture, then analyze packets, "
+        "devices, connections, advertising data, and errors in real-time. "
+        "Requires the BlueSPY application to be installed."
     ),
 )
 
@@ -283,8 +284,9 @@ def stop_capture() -> str:
     """Stop the active live capture.
 
     Returns the file path, packet count, and duration of the capture.
-    The file is NOT automatically loaded for analysis — use load_capture()
-    to analyze it, or disconnect and save it for later.
+    Note: analysis tools (capture_summary, search_packets, etc.) work
+    during live capture — you don't need to stop first. Use load_capture()
+    after stopping to access inspect_connection and inspect_advertising.
     """
     try:
         data = _hardware.stop_capture()
