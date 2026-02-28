@@ -19,11 +19,15 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+_env: dict[str, str] = {}
+if _lib_path := os.environ.get("BLUESPY_LIBRARY_PATH"):
+    _env["BLUESPY_LIBRARY_PATH"] = _lib_path
+
 MCP_CONFIG = {
     "bluespy": {
         "command": "uv",
         "args": ["run", "--directory", str(PROJECT_ROOT), "bluespy-mcp"],
-        "env": {"BLUESPY_LIBRARY_PATH": os.environ.get("BLUESPY_LIBRARY_PATH", "")},
+        "env": _env,
     }
 }
 
