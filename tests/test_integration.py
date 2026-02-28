@@ -245,3 +245,60 @@ class TestRealServer:
 
         result = json.loads(list_captures(str(FIXTURES_DIR)))
         assert result["count"] >= 2  # We have at least 2 fixture files
+
+
+class TestHardwareIntegration:
+    """Integration tests requiring BlueSPY hardware.
+
+    Run with: pytest tests/ -v -m hardware
+    """
+
+    def test_discover_finds_device(self):
+        from bluespy_mcp.hardware import HardwareManager
+        mgr = HardwareManager()
+        result = mgr.discover()
+        assert len(result["serials"]) > 0
+
+    def test_connect_and_disconnect(self):
+        from bluespy_mcp.hardware import HardwareManager, HardwareState
+        mgr = HardwareManager()
+        try:
+            mgr.connect()
+            assert mgr.state == HardwareState.CONNECTED
+        finally:
+            mgr.disconnect()
+            assert mgr.state == HardwareState.IDLE
+
+    def test_capture_5_seconds(self, tmp_path):
+        from bluespy_mcp.hardware import HardwareManager, HardwareState
+        mgr = HardwareManager()
+        try:
+            mgr.connect()
+            result = mgr.start_capture(
+                filename=str(tmp_path / "test.pcapng"),
+                duration_seconds=5,
+                LE=True,
+            )
+            assert result["timed"] is True
+            assert result["packet_count"] >= 0
+        finally:
+            mgr.disconnect()
+
+    def test_manual_start_stop(self, tmp_path):
+        from bluespy_mcp.hardware import HardwareManager, HardwareState
+        import time
+        mgr = HardwareManager()
+        try:
+            mgr.connect()
+            mgr.start_capture(
+                filename=str(tmp_path / "manual.pcapng"),
+                LE=True,
+            )
+            assert mgr.state == HardwareState.CAPTURING
+            time.sleep(3)
+            result = mgr.stop_capture()
+            assert mgr.state == HardwareState.CONNECTED
+            assert result["packet_count"] >= 0
+            assert result["file_path"].endswith(".pcapng")
+        finally:
+            mgr.disconnect()
