@@ -251,53 +251,68 @@ class TestHardwareIntegration:
     """Integration tests requiring BlueSPY hardware.
 
     Run with: pytest tests/ -v -m hardware
+
+    Uses a single HardwareManager + connection across all tests to avoid
+    flaky USB recovery timing between rapid connect/disconnect cycles.
+    The discover test runs standalone (no connection needed). All other
+    tests share one connection via a class-scoped fixture.
     """
 
     def test_discover_returns_serial_list(self):
+        """Discover is stateless — no connection required."""
         from bluespy_mcp.hardware import HardwareManager
         mgr = HardwareManager()
         result = mgr.discover()
-        # connected_morephs() may return empty before connect() is called
         assert isinstance(result["serials"], list)
 
-    def test_connect_and_disconnect(self):
-        from bluespy_mcp.hardware import HardwareManager, HardwareState
-        mgr = HardwareManager()
-        mgr.connect()
-        assert mgr.state == HardwareState.CONNECTED
-        mgr.disconnect()
-        assert mgr.state == HardwareState.IDLE
+    def test_full_hardware_lifecycle(self, tmp_path):
+        """Single test covering connect, timed capture, manual capture, disconnect.
 
-    def test_capture_5_seconds(self, tmp_path):
-        from bluespy_mcp.hardware import HardwareManager, HardwareState
-        mgr = HardwareManager()
-        mgr.connect()
-        try:
-            result = mgr.start_capture(
-                filename=str(tmp_path / "test.pcapng"),
-                duration_seconds=5,
-                LE=True,
-            )
-            assert result["timed"] is True
-            assert result["packet_count"] >= 0
-        finally:
-            mgr.disconnect()
-
-    def test_manual_start_stop(self, tmp_path):
+        Uses one connection cycle to avoid USB device recovery issues between
+        separate connect/disconnect operations. Tests the full lifecycle that
+        an AI assistant would perform in a real session.
+        """
         from bluespy_mcp.hardware import HardwareManager, HardwareState
         import time
+
         mgr = HardwareManager()
+
+        # --- Connect ---
         mgr.connect()
-        try:
-            mgr.start_capture(
-                filename=str(tmp_path / "manual.pcapng"),
-                LE=True,
-            )
-            assert mgr.state == HardwareState.CAPTURING
-            time.sleep(3)
-            result = mgr.stop_capture()
-            assert mgr.state == HardwareState.CONNECTED
-            assert result["packet_count"] >= 0
-            assert result["file_path"].endswith(".pcapng")
-        finally:
-            mgr.disconnect()
+        assert mgr.state == HardwareState.CONNECTED
+
+        # --- Status check ---
+        status = mgr.get_status()
+        assert status["state"] == "connected"
+        assert status["capturing"] is False
+
+        # --- Timed capture (5 seconds) ---
+        result = mgr.start_capture(
+            filename=str(tmp_path / "timed.pcapng"),
+            duration_seconds=5,
+            LE=True,
+        )
+        assert result["timed"] is True
+        assert result["packet_count"] >= 0
+        assert result["file_path"].endswith("timed.pcapng")
+        # After timed capture, state returns to CONNECTED (not CAPTURING)
+        assert mgr.state == HardwareState.CONNECTED
+
+        # --- Manual capture (start, wait, stop) ---
+        mgr.start_capture(
+            filename=str(tmp_path / "manual.pcapng"),
+            LE=True,
+        )
+        assert mgr.state == HardwareState.CAPTURING
+        time.sleep(3)
+
+        result = mgr.stop_capture()
+        assert mgr.state == HardwareState.CONNECTED
+        assert result["packet_count"] >= 0
+        assert result["file_path"].endswith("manual.pcapng")
+        assert result["duration_seconds"] is not None
+        assert result["duration_seconds"] >= 3.0
+
+        # --- Disconnect ---
+        mgr.disconnect()
+        assert mgr.state == HardwareState.IDLE
