@@ -40,11 +40,12 @@ Issues = "https://github.com/novelbits/bluespy-mcp/issues"
 packages = ["src/bluespy_mcp"]
 
 [project.optional-dependencies]
-e2e = ["claude-agent-sdk"]
+e2e = ["claude-code-sdk", "pytest-asyncio"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not e2e'"
+asyncio_mode = "auto"
 markers = [
     "hardware: tests requiring BlueSPY hardware and dylib (deselect with '-m \"not hardware\"')",
     "e2e: end-to-end tests using Claude agent SDK (deselect with '-m \"not e2e\"')",
