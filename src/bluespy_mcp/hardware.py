@@ -120,10 +120,17 @@ class HardwareManager:
             raise HardwareError(f"Worker subprocess failed to start: {e}")
 
     def _kill_worker(self) -> None:
-        """Kill the worker subprocess."""
+        """Kill the worker subprocess.
+
+        Tries to let the worker exit cleanly first (os._exit skips atexit),
+        falling back to SIGKILL if it doesn't exit within 2 seconds.
+        """
         if self._process and self._process.is_alive():
-            self._process.kill()
+            # Give worker time to exit cleanly via os._exit
             self._process.join(timeout=2)
+            if self._process.is_alive():
+                self._process.kill()
+                self._process.join(timeout=2)
         self._process = None
         self._cmd_queue = None
         self._result_queue = None

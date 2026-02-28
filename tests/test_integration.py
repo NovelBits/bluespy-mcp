@@ -263,18 +263,16 @@ class TestHardwareIntegration:
     def test_connect_and_disconnect(self):
         from bluespy_mcp.hardware import HardwareManager, HardwareState
         mgr = HardwareManager()
-        try:
-            mgr.connect()
-            assert mgr.state == HardwareState.CONNECTED
-        finally:
-            mgr.disconnect()
-            assert mgr.state == HardwareState.IDLE
+        mgr.connect()
+        assert mgr.state == HardwareState.CONNECTED
+        mgr.disconnect()
+        assert mgr.state == HardwareState.IDLE
 
     def test_capture_5_seconds(self, tmp_path):
         from bluespy_mcp.hardware import HardwareManager, HardwareState
         mgr = HardwareManager()
+        mgr.connect()
         try:
-            mgr.connect()
             result = mgr.start_capture(
                 filename=str(tmp_path / "test.pcapng"),
                 duration_seconds=5,
@@ -288,11 +286,9 @@ class TestHardwareIntegration:
     def test_manual_start_stop(self, tmp_path):
         from bluespy_mcp.hardware import HardwareManager, HardwareState
         import time
-        # Allow hardware to fully release from previous test
-        time.sleep(5)
         mgr = HardwareManager()
+        mgr.connect()
         try:
-            mgr.connect()
             mgr.start_capture(
                 filename=str(tmp_path / "manual.pcapng"),
                 LE=True,

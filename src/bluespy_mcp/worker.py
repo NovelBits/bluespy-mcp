@@ -132,11 +132,14 @@ def worker_loop(cmd_queue, result_queue):
         result = handle_command(bluespy, cmd)
         result_queue.put(result)
 
-    # Skip atexit handlers when running as a real subprocess.
-    # bluespy.py registers bluespy_deinit via atexit which corrupts
-    # USB state, causing bluespy_init to fail in the next subprocess.
-    # We handle cleanup via the disconnect command instead.
+    # Explicitly deinit the C library to release USB handles, then
+    # os._exit to prevent atexit from calling bluespy_deinit again
+    # (double-call can SIGSEGV when Python is partially torn down).
     import multiprocessing
     if multiprocessing.current_process().name != "MainProcess":
+        try:
+            bluespy._libbluespy.bluespy_deinit()
+        except Exception:
+            pass
         time.sleep(0.1)  # Let result queue flush
         os._exit(0)
