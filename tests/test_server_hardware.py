@@ -317,23 +317,32 @@ class TestLiveAnalysisRouting:
         idle_hw.get_devices.assert_not_called()
         assert result["count"] == 1
 
-    def test_inspect_connection_rejects_during_live(self, capturing_hw):
+    def test_inspect_connection_routes_to_hardware(self, capturing_hw):
+        capturing_hw.inspect_connection_live.return_value = {
+            "index": 0, "summary": "Connection 0xABCD",
+            "packet_type_counts": {"ATT": 5, "LE_DATA": 10},
+        }
         with patch("bluespy_mcp.server._hardware", capturing_hw), \
              patch("bluespy_mcp.server._capture") as mock_cap:
             mock_cap.is_loaded = False
             from bluespy_mcp.server import inspect_connection
-            result = json.loads(inspect_connection())
-        assert "error" in result
-        assert "loaded capture file" in result["error"]
+            result = json.loads(inspect_connection(connection_index=1))
+        capturing_hw.inspect_connection_live.assert_called_once_with(1)
+        assert result["packet_type_counts"]["ATT"] == 5
 
-    def test_inspect_advertising_rejects_during_live(self, capturing_hw):
+    def test_inspect_advertising_routes_to_hardware(self, capturing_hw):
+        capturing_hw.inspect_advertising_live.return_value = {
+            "address": "AA:BB:CC:DD:EE:FF", "advertisement_count": 42,
+            "channels_used": [37, 38, 39],
+        }
         with patch("bluespy_mcp.server._hardware", capturing_hw), \
              patch("bluespy_mcp.server._capture") as mock_cap:
             mock_cap.is_loaded = False
             from bluespy_mcp.server import inspect_advertising
-            result = json.loads(inspect_advertising())
-        assert "error" in result
-        assert "loaded capture file" in result["error"]
+            result = json.loads(inspect_advertising(device_index=2))
+        capturing_hw.inspect_advertising_live.assert_called_once_with(2)
+        assert result["advertisement_count"] == 42
+        assert result["address"] == "AA:BB:CC:DD:EE:FF"
 
 
 class TestLiveAnalysisEndToEnd:

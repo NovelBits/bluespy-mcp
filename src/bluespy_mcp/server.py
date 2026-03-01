@@ -284,9 +284,8 @@ def stop_capture() -> str:
     """Stop the active live capture.
 
     Returns the file path, packet count, and duration of the capture.
-    Note: analysis tools (capture_summary, search_packets, etc.) work
-    during live capture — you don't need to stop first. Use load_capture()
-    after stopping to access inspect_connection and inspect_advertising.
+    The file is NOT automatically loaded for analysis — use load_capture()
+    to analyze it, or disconnect and save it for later.
     """
     try:
         data = _hardware.stop_capture()
@@ -406,10 +405,7 @@ def inspect_connection(connection_index: int = 0) -> str:
         return _not_ready()
     try:
         if _hardware.state == HardwareState.CAPTURING:
-            return _error(
-                "inspect_connection requires a loaded capture file. "
-                "Stop the capture and load the file first."
-            )
+            return _json(_hardware.inspect_connection_live(connection_index))
         return _json(analyze_connection(_capture, connection_index))
     except Exception as e:
         return _error(str(e))
@@ -426,10 +422,7 @@ def inspect_advertising(device_index: int = 0) -> str:
         return _not_ready()
     try:
         if _hardware.state == HardwareState.CAPTURING:
-            return _error(
-                "inspect_advertising requires a loaded capture file. "
-                "Stop the capture and load the file first."
-            )
+            return _json(_hardware.inspect_advertising_live(device_index))
         return _json(analyze_advertising(_capture, device_index))
     except Exception as e:
         return _error(str(e))

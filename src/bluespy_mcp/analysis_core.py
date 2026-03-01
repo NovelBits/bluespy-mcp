@@ -295,6 +295,141 @@ def extract_device_info(devices) -> list[dict]:
     return result
 
 
+def _extract_adv_address(pkt) -> str:
+    """Extract advertiser address from an advertising PDU's payload.
+
+    In legacy advertising PDUs (ADV_IND, ADV_NONCONN_IND, etc.), the
+    advertiser address (AdvA) occupies bytes 2-7 of the payload in
+    little-endian order.
+    """
+    try:
+        payload = pkt.query("payload")
+        if isinstance(payload, bytes) and len(payload) >= 8:
+            return ":".join(f"{b:02X}" for b in reversed(payload[2:8]))
+    except (AttributeError, Exception):
+        pass
+    return ""
+
+
+# Advertising packet types to exclude when counting connection traffic
+_ADV_TYPES = frozenset({
+    "ADV_IND", "ADV_NONCONN_IND", "ADV_SCAN_IND",
+    "ADV_DIRECT_IND", "ADV_EXT_IND", "AUX_ADV_IND",
+    "SCAN_REQ", "SCAN_RSP",
+})
+
+
+def analyze_connection_live(connections, packets, connection_index: int = 0) -> dict:
+    """Analyze a connection during live capture.
+
+    Args:
+        connections: BlueSPY connection objects (from bluespy.connections).
+        packets: BlueSPY packet objects (from bluespy.packets).
+        connection_index: 0-based index into connections list.
+
+    Returns:
+        Dict with connection info and packet type counts.
+    """
+    conn_list = extract_connection_info(connections)
+    if not conn_list:
+        return {"error": "No connections found in this capture."}
+    if connection_index >= len(conn_list):
+        return {
+            "error": f"Connection index {connection_index} out of range. "
+            f"Found {len(conn_list)} connection(s)."
+        }
+
+    result = conn_list[connection_index]
+
+    # Count non-advertising packets by type (heuristic for connection traffic)
+    conn_type_counts: dict[str, int] = {}
+    total = len(packets)
+    for i in range(total):
+        try:
+            summary = packets[i].summary
+            pkt_type = classify_packet(summary)
+            if pkt_type not in _ADV_TYPES:
+                conn_type_counts[pkt_type] = conn_type_counts.get(pkt_type, 0) + 1
+        except (AttributeError, Exception):
+            continue
+
+    result["packet_type_counts"] = conn_type_counts
+    return result
+
+
+def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
+    """Analyze advertising data for a device during live capture.
+
+    Args:
+        devices: BlueSPY device objects (from bluespy.devices).
+        packets: BlueSPY packet objects (from bluespy.packets).
+        device_index: 0-based index into devices list.
+
+    Returns:
+        Dict with device info, advertising sample, RSSI/channel stats.
+    """
+    dev_list = extract_device_info(devices)
+    if not dev_list:
+        return {"error": "No devices found in this capture."}
+    if device_index >= len(dev_list):
+        return {
+            "error": f"Device index {device_index} out of range. "
+            f"Found {len(dev_list)} device(s)."
+        }
+
+    dev_info = dev_list[device_index]
+    device_address = dev_info.get("address", "")
+
+    adv_packets: list[dict] = []
+    channels_seen: set[int] = set()
+    rssi_values: list[int] = []
+
+    total = len(packets)
+    for i in range(total):
+        pkt = packets[i]
+        try:
+            summary = pkt.summary
+            if "ADV" not in summary.upper():
+                continue
+            # Filter to this device by matching address
+            if device_address:
+                if device_address in summary:
+                    pass  # match via summary text
+                else:
+                    pkt_addr = _extract_adv_address(pkt)
+                    if pkt_addr != device_address:
+                        continue
+
+            adv_info: dict[str, Any] = {"index": i, "summary": summary}
+            try:
+                adv_info["rssi"] = pkt.rssi
+                rssi_values.append(pkt.rssi)
+            except (AttributeError, Exception):
+                pass
+            try:
+                adv_info["channel"] = pkt.channel
+                channels_seen.add(pkt.channel)
+            except (AttributeError, Exception):
+                pass
+            adv_packets.append(adv_info)
+        except (AttributeError, Exception):
+            continue
+
+    result: dict[str, Any] = {
+        "address": device_address,
+        "name": dev_info.get("name", ""),
+        "advertisement_count": len(adv_packets),
+        "advertisements_sample": adv_packets[:50],
+        "channels_used": sorted(channels_seen),
+    }
+    if rssi_values:
+        result["rssi_min"] = min(rssi_values)
+        result["rssi_max"] = max(rssi_values)
+        result["rssi_avg"] = round(sum(rssi_values) / len(rssi_values), 1)
+
+    return result
+
+
 def extract_connection_info(connections) -> list[dict]:
     """Extract connection information from BlueSPY connection objects.
 

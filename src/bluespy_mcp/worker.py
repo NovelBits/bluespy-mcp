@@ -61,6 +61,8 @@ from bluespy_mcp.analysis_core import (
     find_error_packets,
     extract_device_info,
     extract_connection_info,
+    analyze_connection_live,
+    analyze_advertising_live,
 )
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,22 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
                 start=cmd.get("start", 0),
             )
             return {"ok": True, "data": {"errors": errors, "count": len(errors)}}
+
+        elif action == "inspect_connection":
+            result = analyze_connection_live(
+                bluespy.connections,
+                bluespy.packets,
+                connection_index=cmd.get("connection_index", 0),
+            )
+            return {"ok": True, "data": result}
+
+        elif action == "inspect_advertising":
+            result = analyze_advertising_live(
+                bluespy.devices,
+                bluespy.packets,
+                device_index=cmd.get("device_index", 0),
+            )
+            return {"ok": True, "data": result}
 
         else:
             return {"ok": False, "error": f"Unknown command: {action}"}

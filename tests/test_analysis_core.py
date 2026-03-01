@@ -3,12 +3,15 @@
 import pytest
 
 from bluespy_mcp.analysis_core import (
+    _extract_adv_address,
     classify_packet,
     summarize_packets,
     filter_packets,
     find_error_packets,
     extract_device_info,
     extract_connection_info,
+    analyze_connection_live,
+    analyze_advertising_live,
     ERROR_KEYWORDS,
     SUMMARY_PACKET_LIMIT,
 )
@@ -186,6 +189,129 @@ class TestExtractConnectionInfo:
     def test_empty_connections(self):
         result = extract_connection_info([])
         assert result == []
+
+
+class TestExtractAdvAddress:
+    def test_extracts_address_from_payload(self):
+        """Extract advertiser address from bytes 2-7 in little-endian."""
+        pkt = MockPacket(summary="ADV_IND")
+        # Payload: 2 header bytes + 6 address bytes (LE order: FF:EE:DD:CC:BB:AA)
+        pkt.query = lambda name: (
+            b"\x00\x00\xFF\xEE\xDD\xCC\xBB\xAA\x00\x00"
+            if name == "payload" else MockPacket.query(pkt, name)
+        )
+        assert _extract_adv_address(pkt) == "AA:BB:CC:DD:EE:FF"
+
+    def test_returns_empty_for_short_payload(self):
+        pkt = MockPacket(summary="ADV_IND")
+        pkt.query = lambda name: b"\x00\x01" if name == "payload" else MockPacket.query(pkt, name)
+        assert _extract_adv_address(pkt) == ""
+
+    def test_returns_empty_on_error(self):
+        pkt = MockPacket(summary="ADV_IND")
+        pkt.query = lambda name: (_ for _ in ()).throw(AttributeError())
+        assert _extract_adv_address(pkt) == ""
+
+
+class TestAnalyzeConnectionLive:
+    def _make_data(self):
+        connections = [MockConnection()]
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND to AA:BB", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="LE-U L2CAP Data", time=4000, rssi=-48, channel=5),
+        ])
+        return connections, packets
+
+    def test_returns_connection_info(self):
+        conns, pkts = self._make_data()
+        result = analyze_connection_live(conns, pkts, connection_index=0)
+        assert "summary" in result
+        assert "0xABCD" in result["summary"]
+
+    def test_counts_non_adv_packets(self):
+        conns, pkts = self._make_data()
+        result = analyze_connection_live(conns, pkts, connection_index=0)
+        counts = result["packet_type_counts"]
+        assert "ADV_IND" not in counts  # advertising excluded
+        assert counts.get("CONNECT_IND", 0) == 1
+        assert counts.get("ATT", 0) == 1
+        assert counts.get("LE_DATA", 0) == 1
+
+    def test_no_connections_error(self):
+        result = analyze_connection_live([], MockPackets([]))
+        assert "error" in result
+
+    def test_index_out_of_range(self):
+        conns, pkts = self._make_data()
+        result = analyze_connection_live(conns, pkts, connection_index=5)
+        assert "error" in result
+        assert "out of range" in result["error"]
+
+
+class TestAnalyzeAdvertisingLive:
+    def _make_data(self):
+        devices = [
+            MockDevice(_address="AA:BB:CC:DD:EE:FF"),
+            MockDevice(_address="11:22:33:44:55:66"),
+        ]
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1100, rssi=-60, channel=38),
+            MockPacket(summary="ADV_IND from 11:22:33:44:55:66", time=1200, rssi=-70, channel=39),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+        ])
+        return devices, packets
+
+    def test_returns_device_info(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=0)
+        assert result["address"] == "AA:BB:CC:DD:EE:FF"
+
+    def test_counts_advertisements_for_device(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=0)
+        assert result["advertisement_count"] == 2  # only AA:BB's ADV packets
+
+    def test_second_device(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=1)
+        assert result["address"] == "11:22:33:44:55:66"
+        assert result["advertisement_count"] == 1
+
+    def test_rssi_stats(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=0)
+        assert result["rssi_min"] == -60
+        assert result["rssi_max"] == -55
+        assert result["rssi_avg"] == -57.5
+
+    def test_channels_used(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=0)
+        assert 37 in result["channels_used"]
+        assert 38 in result["channels_used"]
+
+    def test_no_devices_error(self):
+        result = analyze_advertising_live([], MockPackets([]))
+        assert "error" in result
+
+    def test_index_out_of_range(self):
+        devs, pkts = self._make_data()
+        result = analyze_advertising_live(devs, pkts, device_index=10)
+        assert "error" in result
+        assert "out of range" in result["error"]
+
+    def test_limits_sample_to_50(self):
+        devices = [MockDevice()]
+        packets = MockPackets([
+            MockPacket(summary=f"ADV_IND from AA:BB:CC:DD:EE:FF #{i}", time=i * 1000, rssi=-55, channel=37)
+            for i in range(100)
+        ])
+        result = analyze_advertising_live(devices, packets, device_index=0)
+        assert result["advertisement_count"] == 100
+        assert len(result["advertisements_sample"]) == 50
 
 
 class TestConstants:

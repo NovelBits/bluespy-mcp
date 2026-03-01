@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from bluespy_mcp.analysis_core import (
+    _extract_adv_address,
     classify_packet,
     ERROR_KEYWORDS as _ERROR_KEYWORDS,
     SUMMARY_PACKET_LIMIT as _SUMMARY_PACKET_LIMIT,
@@ -140,22 +141,6 @@ def analyze_connection(capture: CaptureManager, connection_index: int = 0) -> di
 
     result["packet_type_counts"] = conn_type_counts
     return result
-
-
-def _extract_adv_address(pkt) -> str:
-    """Extract advertiser address from an advertising PDU's payload.
-
-    In legacy advertising PDUs (ADV_IND, ADV_NONCONN_IND, etc.), the
-    advertiser address (AdvA) occupies bytes 2-7 of the payload in
-    little-endian order.
-    """
-    try:
-        payload = pkt.query("payload")
-        if isinstance(payload, bytes) and len(payload) >= 8:
-            return ":".join(f"{b:02X}" for b in reversed(payload[2:8]))
-    except (AttributeError, Exception):
-        pass
-    return ""
 
 
 def analyze_advertising(capture: CaptureManager, device_index: int = 0) -> dict:

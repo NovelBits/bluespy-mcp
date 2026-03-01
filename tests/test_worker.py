@@ -354,3 +354,44 @@ class TestLiveAnalysisCommands:
         # LL_TERMINATE_IND matches TERMINATE keyword
         assert result["data"]["count"] == 1
         assert "TERMINATE" in result["data"]["errors"][0]["summary"]
+
+    def test_inspect_connection(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "inspect_connection", "connection_index": 0})
+        assert result["ok"] is True
+        data = result["data"]
+        assert "summary" in data
+        assert "packet_type_counts" in data
+        # ADV packets should be excluded from connection counts
+        assert "ADV_IND" not in data["packet_type_counts"]
+
+    def test_inspect_connection_no_connections(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        mock.connections = []
+        result = handle_command(mock, {"cmd": "inspect_connection"})
+        assert result["ok"] is True
+        assert "error" in result["data"]
+
+    def test_inspect_advertising(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result = handle_command(mock, {"cmd": "inspect_advertising", "device_index": 0})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["address"] == "AA:BB:CC:DD:EE:FF"
+        assert data["advertisement_count"] > 0
+        assert "channels_used" in data
+
+    def test_inspect_advertising_no_devices(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        mock.devices = []
+        result = handle_command(mock, {"cmd": "inspect_advertising"})
+        assert result["ok"] is True
+        assert "error" in result["data"]
