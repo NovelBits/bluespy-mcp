@@ -20,6 +20,7 @@ class MockPacket:
     time: int = 0
     rssi: int = -60
     channel: int = 37
+    payload: bytes | None = None
 
     def query(self, name: str) -> Any:
         if hasattr(self, name) and name != "query":

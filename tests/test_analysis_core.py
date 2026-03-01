@@ -127,6 +127,22 @@ class TestFilterPackets:
         results = filter_packets(packets, packet_type="ADV_IND", channel=37)
         assert len(results) == 1
 
+    def test_includes_payload_hex(self):
+        payload = b"\x00\x06\xaa\xbb\xcc\xdd\xee\xff\x02\x01\x06"
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37, payload=payload),
+        ])
+        results = filter_packets(packets)
+        assert len(results) == 1
+        assert results[0]["payload_hex"] == payload.hex()
+
+    def test_missing_payload_omitted(self):
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
+        ])
+        results = filter_packets(packets)
+        assert "payload_hex" not in results[0]
+
 
 class TestFindErrorPackets:
     def test_finds_errors(self):

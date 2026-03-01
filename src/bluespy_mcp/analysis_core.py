@@ -200,6 +200,12 @@ def filter_packets(
                 pkt_dict[attr] = getattr(pkt, attr)
             except (AttributeError, Exception):
                 pass
+        try:
+            payload = pkt.query("payload")
+            if isinstance(payload, bytes) and payload:
+                pkt_dict["payload_hex"] = payload.hex()
+        except (AttributeError, Exception):
+            pass
         results.append(pkt_dict)
 
     return results
@@ -410,6 +416,12 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
             try:
                 adv_info["channel"] = pkt.channel
                 channels_seen.add(pkt.channel)
+            except (AttributeError, Exception):
+                pass
+            try:
+                payload = pkt.query("payload")
+                if isinstance(payload, bytes) and payload:
+                    adv_info["payload_hex"] = payload.hex()
             except (AttributeError, Exception):
                 pass
             adv_packets.append(adv_info)
