@@ -40,6 +40,15 @@ mcp = FastMCP(
         "and inspect_connection() for deep analysis.\n"
         "- **Errors last**: find_capture_errors() after you understand the devices and "
         "connections, so error context makes sense.\n\n"
+        "## Live Capture: Timed vs Open-Ended\n"
+        "- **Timed**: start_capture(duration_seconds=N) blocks until done. "
+        "No analysis is possible during the capture — use this only when the user "
+        "wants a quick grab-and-analyze-later flow.\n"
+        "- **Open-ended** (preferred for live analysis): start_capture() with NO "
+        "duration_seconds. The capture runs in the background and ALL analysis "
+        "tools work in real-time on the growing data. Call stop_capture() when done.\n"
+        "- When the user asks to analyze traffic as it appears, watch devices live, "
+        "or do real-time analysis, ALWAYS use open-ended capture.\n\n"
         "## Recommended Workflow\n"
         "1. Load or capture data\n"
         "2. capture_summary() — understand scope (packet count, duration, device count)\n"
@@ -184,24 +193,26 @@ def investigate_device(file_path: str, device_address: str) -> str:
 
 
 @mcp.prompt()
-def capture_and_analyze(duration_seconds: str = "10") -> str:
-    """Live capture followed by full analysis in one workflow."""
+def capture_and_analyze(duration_seconds: str = "30") -> str:
+    """Live capture with real-time analysis, then stop and summarize."""
     return (
-        f"Please capture Bluetooth LE traffic for {duration_seconds} seconds "
-        "and then perform a full analysis.\n\n"
+        f"Please capture Bluetooth LE traffic for about {duration_seconds} seconds "
+        "while analyzing it in real-time.\n\n"
+        "IMPORTANT: Do NOT pass duration_seconds to start_capture(). Start an "
+        "open-ended capture so analysis tools work during the capture.\n\n"
         "Follow these steps:\n"
         "1. Use connect_hardware() to connect to the BlueSPY sniffer\n"
-        f"2. Use start_capture(duration_seconds={duration_seconds}) to capture traffic\n"
-        "3. Report capture stats: file path, packet count, duration\n"
-        "4. Load the saved capture file with load_capture()\n"
-        "5. Run full analysis:\n"
-        "   a. capture_summary() — overall statistics\n"
-        "   b. list_devices() — all discovered devices\n"
-        "   c. list_connections() — all connections\n"
-        "   d. find_capture_errors() — protocol errors and disconnects\n"
+        "2. Use start_capture() — no duration_seconds, so it runs in the background\n"
+        "3. While the capture is running, analyze the live data:\n"
+        "   a. capture_summary() — see how many packets are arriving\n"
+        "   b. list_devices() — discover devices as they appear\n"
+        "   c. inspect_advertising() for interesting devices\n"
+        "   d. list_connections() — watch for new connections\n"
+        "   e. Repeat a few times to see the data grow\n"
+        f"4. After ~{duration_seconds} seconds, use stop_capture()\n"
+        "5. Run find_capture_errors() for protocol issues\n"
         "6. Use disconnect_hardware() to release the sniffer\n"
-        "7. Summarize findings: device count, connection count, error count, "
-        "and any notable observations"
+        "7. Summarize: devices found, connections, advertising behavior, errors"
     )
 
 
@@ -314,11 +325,17 @@ def start_capture(
 ) -> str:
     """Start a live Bluetooth capture.
 
+    IMPORTANT: If you need to analyze data during the capture (list_devices,
+    capture_summary, inspect_advertising, etc.), do NOT set duration_seconds.
+    When duration_seconds is set, the capture blocks and no analysis tools
+    can run until it finishes.
+
     Args:
         filename: Path to save the .pcapng file. Auto-generated if not provided.
-        duration_seconds: Capture duration in seconds. If set, capture runs for
-                         this duration then stops automatically. If None, capture
-                         runs until stop_capture() is called.
+        duration_seconds: Capture duration in seconds. If set, capture BLOCKS
+                         for this duration (no live analysis possible). If None
+                         (recommended), capture runs in the background — all
+                         analysis tools work on live data — until stop_capture().
         LE: Enable Bluetooth LE capture (default True).
         CL: Enable Bluetooth Classic capture.
         QHS: Enable Qualcomm High Speed capture.
