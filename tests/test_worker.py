@@ -34,7 +34,7 @@ class TestWorkerCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
-        result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
         mock.reboot_moreph.assert_not_called()
         mock.connect.assert_called_once_with(-1)
@@ -46,7 +46,7 @@ class TestWorkerCommands:
         mock = _make_mock_bluespy()
         mock.connect.side_effect = [Exception("stale state"), None]
         with patch("bluespy_mcp.worker.time.sleep"):
-            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+            result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
         mock.reboot_moreph.assert_called_once_with(-1)
         assert mock.connect.call_count == 2
@@ -57,7 +57,7 @@ class TestWorkerCommands:
         mock = _make_mock_bluespy()
         mock.connect.side_effect = Exception("Device not found")
         with patch("bluespy_mcp.worker.time.sleep"):
-            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+            result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is False
         assert "Device not found" in result["error"]
 
@@ -72,7 +72,7 @@ class TestWorkerCommands:
             None,
         ]
         with patch("bluespy_mcp.worker.time.sleep") as mock_sleep:
-            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+            result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
         assert mock.connect.call_count == 3
         assert mock_sleep.call_count >= 2  # slept between retries
@@ -81,7 +81,7 @@ class TestWorkerCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
-        result = handle_command(mock, {
+        result, _ = handle_command(mock, {
             "cmd": "start_capture",
             "filename": "/tmp/test.pcapng",
             "LE": True, "CL": False, "QHS": False,
@@ -98,7 +98,7 @@ class TestWorkerCommands:
         mock = _make_mock_bluespy()
         mock.packets.__len__ = MagicMock(return_value=42)
         with patch("bluespy_mcp.worker.time.sleep") as mock_sleep:
-            result = handle_command(mock, {
+            result, _ = handle_command(mock, {
                 "cmd": "start_capture",
                 "filename": "/tmp/test.pcapng",
                 "duration_seconds": 0.1,
@@ -115,7 +115,7 @@ class TestWorkerCommands:
 
         mock = _make_mock_bluespy()
         mock.packets.__len__ = MagicMock(return_value=150)
-        result = handle_command(mock, {"cmd": "stop_capture"})
+        result, _ = handle_command(mock, {"cmd": "stop_capture"})
         assert result["ok"] is True
         mock.stop_capture.assert_called_once()
         assert result["data"]["packet_count"] == 150
@@ -124,7 +124,7 @@ class TestWorkerCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
-        result = handle_command(mock, {"cmd": "disconnect"})
+        result, _ = handle_command(mock, {"cmd": "disconnect"})
         assert result["ok"] is True
         mock.disconnect.assert_called_once()
 
@@ -132,7 +132,7 @@ class TestWorkerCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
-        result = handle_command(mock, {"cmd": "explode"})
+        result, _ = handle_command(mock, {"cmd": "explode"})
         assert result["ok"] is False
         assert "unknown" in result["error"].lower()
 
@@ -141,7 +141,7 @@ class TestWorkerCommands:
 
         mock = _make_mock_bluespy()
         mock.packets.__len__ = MagicMock(return_value=99)
-        result = handle_command(mock, {"cmd": "packet_count"})
+        result, _ = handle_command(mock, {"cmd": "packet_count"})
         assert result["ok"] is True
         assert result["data"]["packet_count"] == 99
 
@@ -154,7 +154,7 @@ class TestFileManagementCommands:
 
         mock = _make_mock_bluespy()
         mock.packets.__len__ = MagicMock(return_value=42)
-        result = handle_command(mock, {"cmd": "load_file", "path": "/tmp/test.pcapng"})
+        result, _ = handle_command(mock, {"cmd": "load_file", "path": "/tmp/test.pcapng"})
         assert result["ok"] is True
         assert result["data"]["packet_count"] == 42
         mock.load_file.assert_called_once_with("/tmp/test.pcapng")
@@ -164,7 +164,7 @@ class TestFileManagementCommands:
 
         mock = _make_mock_bluespy()
         mock.load_file.side_effect = Exception("corrupt file")
-        result = handle_command(mock, {"cmd": "load_file", "path": "/tmp/bad.pcapng"})
+        result, _ = handle_command(mock, {"cmd": "load_file", "path": "/tmp/bad.pcapng"})
         assert result["ok"] is False
         assert "corrupt file" in result["error"]
 
@@ -172,7 +172,7 @@ class TestFileManagementCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
-        result = handle_command(mock, {"cmd": "close_file"})
+        result, _ = handle_command(mock, {"cmd": "close_file"})
         assert result["ok"] is True
         mock.close_file.assert_called_once()
 
@@ -188,7 +188,7 @@ class TestFileManagementCommands:
         mock.devices = [MockDevice()]
         mock.connections = [MockConnection()]
 
-        result = handle_command(mock, {"cmd": "get_metadata"})
+        result, _ = handle_command(mock, {"cmd": "get_metadata"})
         assert result["ok"] is True
         data = result["data"]
         assert data["packet_count"] == 2
@@ -203,7 +203,7 @@ class TestFileManagementCommands:
 
         mock = _make_mock_bluespy()
         mock.packets = MockPackets([])
-        result = handle_command(mock, {"cmd": "get_metadata"})
+        result, _ = handle_command(mock, {"cmd": "get_metadata"})
         assert result["ok"] is True
         assert result["data"]["packet_count"] == 0
         assert "duration_ns" not in result["data"]
@@ -219,7 +219,7 @@ class TestWorkerBluespyErrors:
         error = type("BluespyError", (Exception,), {})("HCI timeout")
         mock.connect.side_effect = error
         with patch("bluespy_mcp.worker.time.sleep"):
-            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+            result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is False
         assert "HCI timeout" in result["error"]
 
@@ -229,7 +229,7 @@ class TestWorkerBluespyErrors:
         mock = _make_mock_bluespy()
         error = type("BluespyError", (Exception,), {})("Capture init failed")
         mock.capture.side_effect = error
-        result = handle_command(mock, {
+        result, _ = handle_command(mock, {
             "cmd": "start_capture",
             "filename": "/tmp/test.pcapng",
             "LE": True, "CL": False, "QHS": False,
@@ -244,7 +244,7 @@ class TestWorkerBluespyErrors:
         mock = _make_mock_bluespy()
         error = type("BluespyError", (Exception,), {})("USB disconnect")
         mock.disconnect.side_effect = error
-        result = handle_command(mock, {"cmd": "disconnect"})
+        result, _ = handle_command(mock, {"cmd": "disconnect"})
         assert result["ok"] is False
         assert "USB disconnect" in result["error"]
 
@@ -257,7 +257,7 @@ class TestWorkerBluespyErrors:
         mock.connect.side_effect = [Exception("stale state"), None]
         mock.reboot_moreph.side_effect = Exception("Device not found for reboot")
         with patch("bluespy_mcp.worker.time.sleep"):
-            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+            result, _ = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
         assert mock.connect.call_count == 2
 
@@ -268,7 +268,7 @@ class TestWorkerBluespyErrors:
         mock = _make_mock_bluespy()
         mock.stop_capture.side_effect = Exception("Flush failed")
         with patch("bluespy_mcp.worker.time.sleep"):
-            result = handle_command(mock, {
+            result, _ = handle_command(mock, {
                 "cmd": "start_capture",
                 "filename": "/tmp/test.pcapng",
                 "duration_seconds": 1.0,
@@ -410,7 +410,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_summary"})
+        result, _ = handle_command(mock, {"cmd": "get_summary"})
         assert result["ok"] is True
         data = result["data"]
         assert data["packet_count"] == 6
@@ -423,7 +423,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_summary", "limit": 3})
+        result, _ = handle_command(mock, {"cmd": "get_summary", "limit": 3})
         assert result["ok"] is True
         data = result["data"]
         assert data["packet_count"] == 6  # total count still full
@@ -435,7 +435,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_packets"})
+        result, _ = handle_command(mock, {"cmd": "get_packets"})
         assert result["ok"] is True
         assert result["data"]["count"] == 6
 
@@ -443,7 +443,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_packets", "channel": 37})
+        result, _ = handle_command(mock, {"cmd": "get_packets", "channel": 37})
         assert result["ok"] is True
         # channel 37: ADV_IND #1, SCAN_REQ
         assert result["data"]["count"] == 2
@@ -454,7 +454,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_packets", "packet_type": "ADV_IND"})
+        result, _ = handle_command(mock, {"cmd": "get_packets", "packet_type": "ADV_IND"})
         assert result["ok"] is True
         assert result["data"]["count"] == 2
 
@@ -462,7 +462,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_packets", "start": 4})
+        result, _ = handle_command(mock, {"cmd": "get_packets", "start": 4})
         assert result["ok"] is True
         # Packets at index 4 and 5
         assert result["data"]["count"] == 2
@@ -472,7 +472,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_devices"})
+        result, _ = handle_command(mock, {"cmd": "get_devices"})
         assert result["ok"] is True
         assert result["data"]["count"] == 2
         addresses = [d["address"] for d in result["data"]["devices"]]
@@ -483,7 +483,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_connections"})
+        result, _ = handle_command(mock, {"cmd": "get_connections"})
         assert result["ok"] is True
         assert result["data"]["count"] == 1
         assert result["data"]["connections"][0]["summary"] != ""
@@ -492,7 +492,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "get_errors"})
+        result, _ = handle_command(mock, {"cmd": "get_errors"})
         assert result["ok"] is True
         # LL_TERMINATE_IND matches TERMINATE keyword
         assert result["data"]["count"] == 1
@@ -502,7 +502,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "inspect_connection", "connection_index": 0})
+        result, _ = handle_command(mock, {"cmd": "inspect_connection", "connection_index": 0})
         assert result["ok"] is True
         data = result["data"]
         assert "summary" in data
@@ -515,7 +515,7 @@ class TestLiveAnalysisCommands:
 
         mock = _make_mock_with_packets()
         mock.connections = []
-        result = handle_command(mock, {"cmd": "inspect_connection"})
+        result, _ = handle_command(mock, {"cmd": "inspect_connection"})
         assert result["ok"] is True
         assert "error" in result["data"]
 
@@ -523,7 +523,7 @@ class TestLiveAnalysisCommands:
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_with_packets()
-        result = handle_command(mock, {"cmd": "inspect_advertising", "device_index": 0})
+        result, _ = handle_command(mock, {"cmd": "inspect_advertising", "device_index": 0})
         assert result["ok"] is True
         data = result["data"]
         assert data["address"] == "AA:BB:CC:DD:EE:FF"
@@ -535,6 +535,6 @@ class TestLiveAnalysisCommands:
 
         mock = _make_mock_with_packets()
         mock.devices = []
-        result = handle_command(mock, {"cmd": "inspect_advertising"})
+        result, _ = handle_command(mock, {"cmd": "inspect_advertising"})
         assert result["ok"] is True
         assert "error" in result["data"]

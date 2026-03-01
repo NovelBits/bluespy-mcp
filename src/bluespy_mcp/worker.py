@@ -64,6 +64,12 @@ from bluespy_mcp.analysis_core import (
     analyze_connection_live,
     analyze_advertising_live,
 )
+from bluespy_mcp.packet_cache import (
+    PacketCache,
+    CachedPackets,
+    build_cache,
+    extend_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +78,35 @@ _CONNECT_RETRIES = 3
 _CONNECT_RETRY_DELAYS = [2.0, 3.0, 5.0]
 
 
-def handle_command(bluespy: Any, cmd: dict) -> dict:
+def _ensure_cache(bluespy: Any, cache: PacketCache | None) -> PacketCache:
+    """Build or extend the packet cache as needed.
+
+    If no cache exists, builds one from scratch. If packets have been
+    added since the last cache build (live capture), extends in place.
+    """
+    if cache is None:
+        return build_cache(bluespy.packets)
+    current = len(bluespy.packets)
+    cached = len(cache.summaries)
+    if current > cached:
+        extend_cache(cache, bluespy.packets, cached)
+    return cache
+
+
+def handle_command(
+    bluespy: Any, cmd: dict, cache: PacketCache | None = None
+) -> tuple[dict, PacketCache | None]:
     """Execute a single command against the bluespy module.
 
     Args:
         bluespy: The loaded bluespy module.
         cmd: Command dict with "cmd" key and optional parameters.
+        cache: Current packet cache (None if not yet built).
 
     Returns:
-        {"ok": True, "data": {...}} on success.
-        {"ok": False, "error": "message"} on failure.
+        Tuple of (result_dict, updated_cache).
+        result_dict: {"ok": True, "data": {...}} or {"ok": False, "error": "..."}.
+        updated_cache: The cache after this command (may be new, extended, or cleared).
     """
     action = cmd.get("cmd")
 
@@ -92,30 +117,33 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
             path = cmd["path"]
             bluespy.load_file(path)
             packet_count = len(bluespy.packets)
-            return {"ok": True, "data": {"packet_count": packet_count}}
+            cache = build_cache(bluespy.packets)
+            return {"ok": True, "data": {"packet_count": packet_count}}, cache
 
         elif action == "close_file":
             bluespy.close_file()
-            return {"ok": True, "data": {}}
+            return {"ok": True, "data": {}}, None
 
         elif action == "get_metadata":
-            total = len(bluespy.packets)
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
+            total = len(packets_view)
             result: dict[str, Any] = {"packet_count": total}
             if total > 0:
                 try:
-                    first_ts = int(bluespy.packets[0].time)
-                    last_ts = int(bluespy.packets[total - 1].time)
+                    first_ts = cache.times[0]
+                    last_ts = cache.times[-1]
                     result["first_timestamp_ns"] = first_ts
                     result["last_timestamp_ns"] = last_ts
                     result["duration_ns"] = last_ts - first_ts
                     result["duration_seconds"] = round((last_ts - first_ts) / 1e9, 3)
-                except (AttributeError, TypeError, ValueError, OverflowError):
+                except (IndexError, TypeError, ValueError, OverflowError):
                     pass
             result["devices"] = extract_device_info(bluespy.devices)
             result["connections"] = extract_connection_info(bluespy.connections)
             result["device_count"] = len(result["devices"])
             result["connection_count"] = len(result["connections"])
-            return {"ok": True, "data": result}
+            return {"ok": True, "data": result}, cache
 
         # --- Hardware commands ---
 
@@ -127,7 +155,7 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
             try:
                 bluespy.connect(serial)
                 serials = bluespy.connected_morephs()
-                return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}
+                return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}, cache
             except Exception as e:
                 logger.info(f"Direct connect failed ({e}), rebooting device...")
             # Reboot to clear stale hardware state, then retry
@@ -143,7 +171,7 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
                 try:
                     bluespy.connect(serial)
                     serials = bluespy.connected_morephs()
-                    return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}
+                    return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}, cache
                 except Exception as e:
                     last_err = e
                     delay = _CONNECT_RETRY_DELAYS[min(attempt, len(_CONNECT_RETRY_DELAYS) - 1)]
@@ -169,81 +197,93 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
                 time.sleep(duration)
                 bluespy.stop_capture()
                 packet_count = len(bluespy.packets)
+                cache = build_cache(bluespy.packets)
                 return {"ok": True, "data": {
                     "file_path": filename,
                     "packet_count": packet_count,
                     "duration_seconds": duration,
                     "timed": True,
-                }}
-            return {"ok": True, "data": {"file_path": filename, "capturing": True}}
+                }}, cache
+            return {"ok": True, "data": {"file_path": filename, "capturing": True}}, cache
 
         elif action == "stop_capture":
             bluespy.stop_capture()
             packet_count = len(bluespy.packets)
-            return {"ok": True, "data": {"packet_count": packet_count}}
+            cache = build_cache(bluespy.packets)
+            return {"ok": True, "data": {"packet_count": packet_count}}, cache
 
         elif action == "disconnect":
             bluespy.disconnect()
-            return {"ok": True, "data": {}}
+            return {"ok": True, "data": {}}, cache
 
         elif action == "packet_count":
             count = len(bluespy.packets)
-            return {"ok": True, "data": {"packet_count": count}}
+            return {"ok": True, "data": {"packet_count": count}}, cache
 
         elif action == "get_summary":
-            summary = summarize_packets(bluespy.packets, limit=cmd.get("limit"))
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
+            summary = summarize_packets(packets_view, limit=cmd.get("limit"))
             summary["devices"] = extract_device_info(bluespy.devices)
             summary["connections"] = extract_connection_info(bluespy.connections)
-            return {"ok": True, "data": summary}
+            return {"ok": True, "data": summary}, cache
 
         elif action == "get_packets":
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
             results = filter_packets(
-                bluespy.packets,
+                packets_view,
                 summary_contains=cmd.get("summary_contains"),
                 packet_type=cmd.get("packet_type"),
                 channel=cmd.get("channel"),
                 max_results=cmd.get("max_results", 100),
                 start=cmd.get("start", 0),
             )
-            return {"ok": True, "data": {"packets": results, "count": len(results)}}
+            return {"ok": True, "data": {"packets": results, "count": len(results)}}, cache
 
         elif action == "get_devices":
             devices = extract_device_info(bluespy.devices)
-            return {"ok": True, "data": {"devices": devices, "count": len(devices)}}
+            return {"ok": True, "data": {"devices": devices, "count": len(devices)}}, cache
 
         elif action == "get_connections":
             connections = extract_connection_info(bluespy.connections)
-            return {"ok": True, "data": {"connections": connections, "count": len(connections)}}
+            return {"ok": True, "data": {"connections": connections, "count": len(connections)}}, cache
 
         elif action == "get_errors":
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
             errors = find_error_packets(
-                bluespy.packets,
+                packets_view,
                 max_results=cmd.get("max_results", 100),
                 start=cmd.get("start", 0),
             )
-            return {"ok": True, "data": {"errors": errors, "count": len(errors)}}
+            return {"ok": True, "data": {"errors": errors, "count": len(errors)}}, cache
 
         elif action == "inspect_connection":
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
             result = analyze_connection_live(
                 bluespy.connections,
-                bluespy.packets,
+                packets_view,
                 connection_index=cmd.get("connection_index", 0),
             )
-            return {"ok": True, "data": result}
+            return {"ok": True, "data": result}, cache
 
         elif action == "inspect_advertising":
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
             result = analyze_advertising_live(
                 bluespy.devices,
-                bluespy.packets,
+                packets_view,
                 device_index=cmd.get("device_index", 0),
             )
-            return {"ok": True, "data": result}
+            return {"ok": True, "data": result}, cache
 
         else:
-            return {"ok": False, "error": f"Unknown command: {action}"}
+            return {"ok": False, "error": f"Unknown command: {action}"}, cache
 
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e)}, cache
 
 
 def worker_loop(cmd_queue, result_queue, mode="hardware"):
@@ -284,6 +324,7 @@ def worker_loop(cmd_queue, result_queue, mode="hardware"):
     # Track whether we opened a hardware connection so we know
     # whether USB release is needed on exit (hardware mode only).
     was_connected = False
+    cache: PacketCache | None = None
 
     while True:
         try:
@@ -303,7 +344,7 @@ def worker_loop(cmd_queue, result_queue, mode="hardware"):
             result_queue.put({"ok": True, "data": {"status": "shutdown"}})
             break
 
-        result = handle_command(bluespy, cmd)
+        result, cache = handle_command(bluespy, cmd, cache)
         if mode == "hardware" and cmd.get("cmd") == "connect" and result.get("ok"):
             was_connected = True
         result_queue.put(result)
