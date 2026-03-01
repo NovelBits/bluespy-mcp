@@ -43,9 +43,26 @@ class TestWorkerCommands:
 
         mock = _make_mock_bluespy()
         mock.connect.side_effect = Exception("Device not found")
-        result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        with patch("bluespy_mcp.worker.time.sleep"):
+            result = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is False
         assert "Device not found" in result["error"]
+
+    def test_connect_retries_on_transient_failure(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        # Fail twice, succeed on third attempt
+        mock.connect.side_effect = [
+            Exception("bluespy_init failed"),
+            Exception("bluespy_init failed"),
+            None,
+        ]
+        with patch("bluespy_mcp.worker.time.sleep") as mock_sleep:
+            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        assert result["ok"] is True
+        assert mock.connect.call_count == 3
+        assert mock_sleep.call_count >= 2  # slept between retries
 
     def test_start_capture_with_defaults(self):
         from bluespy_mcp.worker import handle_command
@@ -188,7 +205,8 @@ class TestWorkerBluespyErrors:
         mock = _make_mock_bluespy()
         error = type("BluespyError", (Exception,), {})("HCI timeout")
         mock.connect.side_effect = error
-        result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        with patch("bluespy_mcp.worker.time.sleep"):
+            result = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is False
         assert "HCI timeout" in result["error"]
 

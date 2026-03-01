@@ -67,7 +67,9 @@ from bluespy_mcp.analysis_core import (
 
 logger = logging.getLogger(__name__)
 
-_REBOOT_WAIT_SECONDS = 3.0
+_REBOOT_WAIT_SECONDS = 5.0
+_CONNECT_RETRIES = 3
+_CONNECT_RETRY_DELAYS = [2.0, 3.0, 5.0]
 
 
 def handle_command(bluespy: Any, cmd: dict) -> dict:
@@ -125,9 +127,23 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
                 time.sleep(_REBOOT_WAIT_SECONDS)
             except Exception as e:
                 logger.warning(f"Reboot failed (may be first connection): {e}")
-            bluespy.connect(serial)
-            serials = bluespy.connected_morephs()
-            return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}
+            # Retry connect within the same worker — avoids the expensive
+            # worker-kill-and-respawn cycle for transient USB timing issues.
+            last_err = None
+            for attempt in range(_CONNECT_RETRIES):
+                try:
+                    bluespy.connect(serial)
+                    serials = bluespy.connected_morephs()
+                    return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}
+                except Exception as e:
+                    last_err = e
+                    delay = _CONNECT_RETRY_DELAYS[min(attempt, len(_CONNECT_RETRY_DELAYS) - 1)]
+                    logger.warning(
+                        f"connect() attempt {attempt + 1}/{_CONNECT_RETRIES} failed: {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    time.sleep(delay)
+            raise last_err
 
         elif action == "start_capture":
             filename = cmd["filename"]

@@ -49,7 +49,7 @@ _DEFAULT_CAPTURES_DIR = Path(os.environ.get("BLE_CAPTURES_DIR", "captures"))
 
 # Timeouts per operation (seconds)
 _TIMEOUTS = {
-    "connect": 30,
+    "connect": 45,
     "disconnect": 5,
     "start_capture": 10,
     "stop_capture": 10,
