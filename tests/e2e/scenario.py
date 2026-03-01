@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -270,12 +271,48 @@ class Scenario:
         model_used = self.model
         error: str | None = None
 
+        # The SDK requires an AsyncIterable prompt when can_use_tool is set.
+        # The iterable must yield dicts with type/message structure.
+        prompt: str | AsyncIterator[dict[str, Any]]
+        if self.forbidden_tools:
+            _prompt_text = self.prompt
+
+            async def _stream_prompt() -> AsyncIterator[dict[str, Any]]:
+                yield {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": _prompt_text,
+                    },
+                }
+
+            prompt = _stream_prompt()
+        else:
+            prompt = self.prompt
+
+        # Short label for log lines
+        _label = self.prompt[:60].replace("\n", " ")
+        _tool_idx = 0
+        print(f"\n  {'─' * 60}")
+        print(f"  SCENARIO: {_label}...")
+        print(f"  Model: {self.model} | Budget: ${self.max_budget:.2f} | Max turns: {self.max_turns}")
+        print(f"  {'─' * 60}")
+
         try:
-            async for message in query(prompt=self.prompt, options=options):
+            async for message in query(prompt=prompt, options=options):
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, ToolUseBlock):
                             tracker.record_tool_use(block)
+                            _tool_idx += 1
+                            # Compact tool input summary
+                            _args = {
+                                k: (v if len(str(v)) < 60 else str(v)[:57] + "...")
+                                for k, v in block.input.items()
+                            } if block.input else {}
+                            _args_str = f" {_args}" if _args else ""
+                            _elapsed = time.time() - start
+                            print(f"  [{_elapsed:6.1f}s] #{_tool_idx} → {block.name}{_args_str}")
                         elif isinstance(block, ToolResultBlock):
                             tracker.record_tool_result(block)
                         elif isinstance(block, TextBlock):
@@ -301,6 +338,16 @@ class Scenario:
             duration_s=duration_s,
             model=model_used,
         )
+
+        # Print summary
+        _status = "ERROR" if error else "OK"
+        _called = [tc.name.replace("mcp__bluespy__", "") for tc in result.tool_calls]
+        print(f"  {'─' * 60}")
+        print(f"  RESULT: {_status} | ${cost_usd:.4f} | {duration_s:.1f}s | {len(result.tool_calls)} tools")
+        print(f"  Tools: {' → '.join(_called)}")
+        if error:
+            print(f"  Error: {error}")
+        print(f"  {'─' * 60}\n")
 
         # Persist result log (always, even on error)
         self._save_result(result, error=error)

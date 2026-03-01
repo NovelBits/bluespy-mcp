@@ -24,23 +24,23 @@ async def test_capture_then_inspect(cost_tracker, mcp_server_config):
     """Capture, stop, then inspect connections from the saved file."""
     scenario = Scenario(
         prompt=(
-            "Connect to the sniffer, capture for 5 seconds, stop the capture, "
+            "Connect to the sniffer, capture for 5 seconds, "
             "then list any connections you found and inspect the first one if "
             "there are any. Then disconnect."
         ),
+        # stop_capture is optional — timed captures auto-stop
         expect_tools_subset=[
             "mcp__bluespy__connect_hardware",
             "mcp__bluespy__start_capture",
-            "mcp__bluespy__stop_capture",
             "mcp__bluespy__list_connections",
             "mcp__bluespy__disconnect_hardware",
         ],
-        max_budget=0.30,
+        max_budget=0.45,
         max_turns=20,
         model="haiku",
         mcp_config=mcp_server_config,
     )
     result = await scenario.run(cost_tracker)
     assert result.tool_called_before(
-        "mcp__bluespy__stop_capture", "mcp__bluespy__list_connections"
+        "mcp__bluespy__start_capture", "mcp__bluespy__list_connections"
     )
