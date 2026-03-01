@@ -25,9 +25,30 @@ mcp = FastMCP(
     "blueSPY MCP Server",
     instructions=(
         "Bluetooth LE protocol capture analysis tools powered by the BlueSPY sniffer. "
-        "Load a .pcapng capture file or start a live capture, then analyze packets, "
-        "devices, connections, advertising data, and errors in real-time. "
-        "Requires the BlueSPY application to be installed."
+        "Requires the BlueSPY application to be installed.\n\n"
+        "## Two Modes\n"
+        "1. **File analysis** — load a .pcapng file with load_capture(), then analyze it.\n"
+        "2. **Live hardware capture** — connect_hardware() → start_capture() → "
+        "analyze in real-time → stop_capture() → disconnect_hardware().\n\n"
+        "## Tool Sequence Rules\n"
+        "- **Always start with** load_capture() (file mode) or connect_hardware() "
+        "(live mode). All analysis tools require data to be available.\n"
+        "- **Close before switching**: close_capture() before connect_hardware(), "
+        "and vice versa. Only one data source at a time.\n"
+        "- **Discovery first, then drill down**: capture_summary() and list_devices() / "
+        "list_connections() give you indices. Use those indices with inspect_advertising() "
+        "and inspect_connection() for deep analysis.\n"
+        "- **Errors last**: find_capture_errors() after you understand the devices and "
+        "connections, so error context makes sense.\n\n"
+        "## Recommended Workflow\n"
+        "1. Load or capture data\n"
+        "2. capture_summary() — understand scope (packet count, duration, device count)\n"
+        "3. list_devices() + list_connections() — identify what's present\n"
+        "4. inspect_advertising(device_index) / inspect_connection(connection_index) — "
+        "deep-dive on items of interest\n"
+        "5. search_packets() — filter by type, channel, or text for specific investigation\n"
+        "6. find_capture_errors() — protocol errors, disconnects, failures\n"
+        "7. Summarize findings for the user"
     ),
 )
 
@@ -138,6 +159,49 @@ def debug_connection(file_path: str) -> str:
         "5. Search for specific error types with search_packets()\n"
         "6. Report: connection parameters, packet distribution, errors found, "
         "likely root cause of any issues"
+    )
+
+
+@mcp.prompt()
+def investigate_device(file_path: str, device_address: str) -> str:
+    """Investigate a specific device's behavior in a capture file."""
+    return (
+        f"Please investigate the Bluetooth LE device {device_address} "
+        f"in capture file: {file_path}\n\n"
+        "Follow these steps:\n"
+        f"1. Load the capture file with load_capture(file_path=\"{file_path}\")\n"
+        "2. Use list_devices() to find the target device and note its index\n"
+        f"3. Use inspect_advertising(device_index=<index>) for device {device_address}\n"
+        f"4. Use search_packets(summary_contains=\"{device_address}\") to find all "
+        "packets involving this device\n"
+        "5. Report:\n"
+        "   - Advertising behavior (type, interval, channels)\n"
+        "   - RSSI readings and signal quality\n"
+        "   - Packet types and counts involving this device\n"
+        "   - Any connections this device participates in\n"
+        "   - Anomalies or unusual behavior"
+    )
+
+
+@mcp.prompt()
+def capture_and_analyze(duration_seconds: str = "10") -> str:
+    """Live capture followed by full analysis in one workflow."""
+    return (
+        f"Please capture Bluetooth LE traffic for {duration_seconds} seconds "
+        "and then perform a full analysis.\n\n"
+        "Follow these steps:\n"
+        "1. Use connect_hardware() to connect to the BlueSPY sniffer\n"
+        f"2. Use start_capture(duration_seconds={duration_seconds}) to capture traffic\n"
+        "3. Report capture stats: file path, packet count, duration\n"
+        "4. Load the saved capture file with load_capture()\n"
+        "5. Run full analysis:\n"
+        "   a. capture_summary() — overall statistics\n"
+        "   b. list_devices() — all discovered devices\n"
+        "   c. list_connections() — all connections\n"
+        "   d. find_capture_errors() — protocol errors and disconnects\n"
+        "6. Use disconnect_hardware() to release the sniffer\n"
+        "7. Summarize findings: device count, connection count, error count, "
+        "and any notable observations"
     )
 
 
