@@ -30,7 +30,7 @@ from bluespy_mcp.hardware import HardwareManager, HardwareError, HardwareState
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
-    "BlueSPY Sniffer",
+    "blueSPY MCP Server",
     instructions=(
         "Bluetooth LE protocol capture analysis tools powered by the BlueSPY sniffer. "
         "Load a .pcapng capture file or start a live capture, then analyze packets, "
