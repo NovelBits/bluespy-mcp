@@ -29,14 +29,27 @@ def _make_mock_bluespy():
 class TestWorkerCommands:
     """Test individual command handlers in the worker."""
 
-    def test_connect_calls_reboot_then_connect(self):
+    def test_connect_fast_path_skips_reboot(self):
+        """When direct connect succeeds, reboot is skipped."""
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
         result = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
-        mock.reboot_moreph.assert_called_once_with(-1)
+        mock.reboot_moreph.assert_not_called()
         mock.connect.assert_called_once_with(-1)
+
+    def test_connect_reboots_on_first_failure(self):
+        """When direct connect fails, reboot + retry kicks in."""
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        mock.connect.side_effect = [Exception("stale state"), None]
+        with patch("bluespy_mcp.worker.time.sleep"):
+            result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        assert result["ok"] is True
+        mock.reboot_moreph.assert_called_once_with(-1)
+        assert mock.connect.call_count == 2
 
     def test_connect_error_returns_failure(self):
         from bluespy_mcp.worker import handle_command
@@ -236,14 +249,17 @@ class TestWorkerBluespyErrors:
         assert "USB disconnect" in result["error"]
 
     def test_reboot_failure_doesnt_prevent_connect(self):
-        """Reboot can fail on first-ever connection. connect() should still be attempted."""
+        """If direct connect fails and reboot also fails, retry connect should still be attempted."""
         from bluespy_mcp.worker import handle_command
 
         mock = _make_mock_bluespy()
+        # First connect fails (triggers reboot path), reboot fails, retry connect succeeds
+        mock.connect.side_effect = [Exception("stale state"), None]
         mock.reboot_moreph.side_effect = Exception("Device not found for reboot")
-        result = handle_command(mock, {"cmd": "connect", "serial": -1})
+        with patch("bluespy_mcp.worker.time.sleep"):
+            result = handle_command(mock, {"cmd": "connect", "serial": -1})
         assert result["ok"] is True
-        mock.connect.assert_called_once_with(-1)
+        assert mock.connect.call_count == 2
 
     def test_stop_capture_error_during_timed(self):
         """If stop_capture fails during timed capture, error is propagated."""

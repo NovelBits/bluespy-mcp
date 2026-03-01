@@ -121,13 +121,22 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
 
         elif action == "connect":
             serial = cmd.get("serial", -1)
-            # Always reboot first to clear stale hardware state
+            # Try connecting without reboot first (fast path for fresh devices).
+            # Only reboot if the direct connect fails, since reboot + USB
+            # re-enumeration adds ~6 seconds.
+            try:
+                bluespy.connect(serial)
+                serials = bluespy.connected_morephs()
+                return {"ok": True, "data": {"serial": serial, "connected_serials": serials}}
+            except Exception as e:
+                logger.info(f"Direct connect failed ({e}), rebooting device...")
+            # Reboot to clear stale hardware state, then retry
             try:
                 bluespy.reboot_moreph(serial)
                 time.sleep(_REBOOT_WAIT_SECONDS)
             except Exception as e:
                 logger.warning(f"Reboot failed (may be first connection): {e}")
-            # Retry connect within the same worker — avoids the expensive
+            # Retry connect after reboot — avoids the expensive
             # worker-kill-and-respawn cycle for transient USB timing issues.
             last_err = None
             for attempt in range(_CONNECT_RETRIES):
