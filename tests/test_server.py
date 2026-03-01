@@ -1,7 +1,7 @@
 """Tests for the MCP server tools."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -9,18 +9,26 @@ from bluespy_mcp.server import mcp
 
 
 @pytest.fixture
-def loaded_capture(tmp_path, mock_bluespy):
+def loaded_capture(tmp_path):
     """Set up a loaded capture via the server's internal state."""
     pcapng = tmp_path / "test.pcapng"
     pcapng.write_bytes(b"\x00" * 100)
 
-    with patch("bluespy_mcp.capture.get_bluespy", return_value=mock_bluespy):
-        # Import and call the tool function directly
-        from bluespy_mcp.server import _capture, load_capture
+    from bluespy_mcp.server import _capture
+
+    # Mock the worker subprocess layer
+    with patch.object(_capture, "_spawn_worker"), \
+         patch.object(_capture, "_send_command") as mock_send, \
+         patch.object(_capture, "_kill_worker"):
+        mock_send.return_value = {"ok": True, "data": {"packet_count": 10}}
+
+        from bluespy_mcp.server import load_capture
         result = load_capture(str(pcapng))
         data = json.loads(result)
         assert data["success"] is True
-        yield _capture
+
+        yield mock_send
+
         from bluespy_mcp.server import close_capture
         close_capture()
 
@@ -48,12 +56,11 @@ class TestCaptureSummary:
         assert "error" in result
 
     def test_returns_summary(self, loaded_capture):
+        mock_send = loaded_capture
+        mock_send.return_value = {"ok": True, "data": {"packet_count": 10, "packet_type_counts": {}}}
         from bluespy_mcp.server import capture_summary
-        with patch("bluespy_mcp.capture.get_bluespy") as mock:
-            mock.return_value = loaded_capture  # reuse fixture indirectly
-            result = json.loads(capture_summary())
-        # Should have packet_count at minimum
-        assert "packet_count" in result or "error" in result
+        result = json.loads(capture_summary())
+        assert "packet_count" in result
 
 
 class TestSearchPackets:
@@ -62,6 +69,43 @@ class TestSearchPackets:
         _capture.close()
         result = json.loads(search_packets())
         assert "error" in result
+
+    def test_returns_packets(self, loaded_capture):
+        mock_send = loaded_capture
+        mock_send.return_value = {"ok": True, "data": {"packets": [], "count": 0}}
+        from bluespy_mcp.server import search_packets
+        result = json.loads(search_packets(summary_contains="ATT"))
+        assert "count" in result
+
+
+class TestListDevices:
+    def test_requires_loaded(self):
+        from bluespy_mcp.server import list_devices, _capture
+        _capture.close()
+        result = json.loads(list_devices())
+        assert "error" in result
+
+    def test_returns_devices(self, loaded_capture):
+        mock_send = loaded_capture
+        mock_send.return_value = {"ok": True, "data": {"devices": [], "count": 0}}
+        from bluespy_mcp.server import list_devices
+        result = json.loads(list_devices())
+        assert "count" in result
+
+
+class TestListConnections:
+    def test_requires_loaded(self):
+        from bluespy_mcp.server import list_connections, _capture
+        _capture.close()
+        result = json.loads(list_connections())
+        assert "error" in result
+
+    def test_returns_connections(self, loaded_capture):
+        mock_send = loaded_capture
+        mock_send.return_value = {"ok": True, "data": {"connections": [], "count": 0}}
+        from bluespy_mcp.server import list_connections
+        result = json.loads(list_connections())
+        assert "count" in result
 
 
 class TestListCaptures:

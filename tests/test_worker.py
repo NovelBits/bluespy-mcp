@@ -17,8 +17,12 @@ def _make_mock_bluespy():
     mock.reboot_moreph.return_value = None
     mock.capture.return_value = None
     mock.stop_capture.return_value = None
+    mock.load_file.return_value = None
+    mock.close_file.return_value = None
     mock.packets = MagicMock()
     mock.packets.__len__ = MagicMock(return_value=0)
+    mock.devices = []
+    mock.connections = []
     return mock
 
 
@@ -112,6 +116,69 @@ class TestWorkerCommands:
         assert result["data"]["packet_count"] == 99
 
 
+class TestFileManagementCommands:
+    """Test file management command handlers in the worker."""
+
+    def test_load_file(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        mock.packets.__len__ = MagicMock(return_value=42)
+        result = handle_command(mock, {"cmd": "load_file", "path": "/tmp/test.pcapng"})
+        assert result["ok"] is True
+        assert result["data"]["packet_count"] == 42
+        mock.load_file.assert_called_once_with("/tmp/test.pcapng")
+
+    def test_load_file_error(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        mock.load_file.side_effect = Exception("corrupt file")
+        result = handle_command(mock, {"cmd": "load_file", "path": "/tmp/bad.pcapng"})
+        assert result["ok"] is False
+        assert "corrupt file" in result["error"]
+
+    def test_close_file(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        result = handle_command(mock, {"cmd": "close_file"})
+        assert result["ok"] is True
+        mock.close_file.assert_called_once()
+
+    def test_get_metadata(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        packets = [
+            MockPacket(summary="ADV_IND", time=1000000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND", time=5000000, rssi=-52, channel=39),
+        ]
+        mock.packets = MockPackets(packets)
+        mock.devices = [MockDevice()]
+        mock.connections = [MockConnection()]
+
+        result = handle_command(mock, {"cmd": "get_metadata"})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["packet_count"] == 2
+        assert data["device_count"] == 1
+        assert data["connection_count"] == 1
+        assert data["duration_ns"] == 4000000
+        assert data["first_timestamp_ns"] == 1000000
+        assert data["last_timestamp_ns"] == 5000000
+
+    def test_get_metadata_empty_packets(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_bluespy()
+        mock.packets = MockPackets([])
+        result = handle_command(mock, {"cmd": "get_metadata"})
+        assert result["ok"] is True
+        assert result["data"]["packet_count"] == 0
+        assert "duration_ns" not in result["data"]
+
+
 class TestWorkerBluespyErrors:
     """Test that BluespyError (ctypes layer) is handled, not just generic Exception."""
 
@@ -181,8 +248,8 @@ class TestWorkerBluespyErrors:
 class TestWorkerLoop:
     """Test the worker_loop main entry point."""
 
-    def test_worker_loop_signals_ready(self):
-        """Worker sends ready signal after loading bluespy."""
+    def test_worker_loop_hardware_signals_ready(self):
+        """Hardware-mode worker sends ready signal after loading bluespy."""
         from bluespy_mcp.worker import worker_loop
 
         cmd_q = mp.Queue()
@@ -192,13 +259,34 @@ class TestWorkerLoop:
         with patch("bluespy_mcp.loader.get_bluespy") as mock_get:
             mock_get.return_value = _make_mock_bluespy()
             import threading
-            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q))
+            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q, "hardware"))
             t.start()
             t.join(timeout=5)
 
         ready = result_q.get(timeout=1)
         assert ready["ok"] is True
         assert ready["data"]["status"] == "ready"
+
+    def test_worker_loop_file_signals_ready(self):
+        """File-mode worker sends ready signal without USB health check."""
+        from bluespy_mcp.worker import worker_loop
+
+        cmd_q = mp.Queue()
+        result_q = mp.Queue()
+        cmd_q.put({"cmd": "shutdown"})
+
+        with patch("bluespy_mcp.loader.get_bluespy") as mock_get:
+            mock_bs = _make_mock_bluespy()
+            mock_get.return_value = mock_bs
+            import threading
+            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q, "file"))
+            t.start()
+            t.join(timeout=5)
+
+        ready = result_q.get(timeout=1)
+        assert ready["ok"] is True
+        # File mode should NOT call connected_morephs()
+        mock_bs.connected_morephs.assert_not_called()
 
     def test_worker_loop_import_failure(self):
         """If bluespy can't be loaded, worker signals failure and exits."""
@@ -210,7 +298,7 @@ class TestWorkerLoop:
         with patch("bluespy_mcp.loader.get_bluespy") as mock_get:
             mock_get.side_effect = ImportError("bluespy not found")
             import threading
-            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q))
+            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q, "hardware"))
             t.start()
             t.join(timeout=5)
 
@@ -231,7 +319,7 @@ class TestWorkerLoop:
             mock_bluespy = _make_mock_bluespy()
             mock_get.return_value = mock_bluespy
             import threading
-            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q))
+            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q, "hardware"))
             t.start()
             t.join(timeout=5)
 
@@ -241,6 +329,27 @@ class TestWorkerLoop:
         assert connect_result["ok"] is True  # connect result
         shutdown_result = result_q.get(timeout=1)
         assert shutdown_result["data"]["status"] == "shutdown"
+
+    def test_worker_loop_file_mode_no_disconnect_on_shutdown(self):
+        """File-mode worker does not call disconnect on shutdown."""
+        from bluespy_mcp.worker import worker_loop
+
+        cmd_q = mp.Queue()
+        result_q = mp.Queue()
+        cmd_q.put({"cmd": "shutdown"})
+
+        with patch("bluespy_mcp.loader.get_bluespy") as mock_get:
+            mock_bs = _make_mock_bluespy()
+            mock_get.return_value = mock_bs
+            import threading
+            t = threading.Thread(target=worker_loop, args=(cmd_q, result_q, "file"))
+            t.start()
+            t.join(timeout=5)
+
+        result_q.get(timeout=1)  # ready
+        shutdown = result_q.get(timeout=1)
+        assert shutdown["data"]["status"] == "shutdown"
+        mock_bs.disconnect.assert_not_called()
 
 
 def _make_mock_with_packets():
