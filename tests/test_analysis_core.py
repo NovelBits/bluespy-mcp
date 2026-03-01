@@ -313,6 +313,32 @@ class TestAnalyzeAdvertisingLive:
         assert result["advertisement_count"] == 100
         assert len(result["advertisements_sample"]) == 50
 
+    def test_case_insensitive_address_matching(self):
+        """Address matching should work regardless of case from query_str."""
+        # Simulate a device whose query_str returns lowercase address
+        class LowercaseDevice:
+            def query(self, name):
+                raise AttributeError()
+            def query_str(self, name):
+                if name == "address":
+                    return "aa:bb:cc:dd:ee:ff"
+                if name == "name":
+                    return "Lowercase Device"
+                if name == "summary":
+                    return "aa:bb:cc:dd:ee:ff, Static"
+                raise AttributeError()
+            def get_connections(self):
+                return []
+
+        devices = [LowercaseDevice()]
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ADV_IND from aa:bb:cc:dd:ee:ff", time=1100, rssi=-60, channel=38),
+        ])
+        result = analyze_advertising_live(devices, packets, device_index=0)
+        assert result["advertisement_count"] == 2
+        assert result["address"] == "AA:BB:CC:DD:EE:FF"  # normalized to uppercase
+
 
 class TestConstants:
     def test_summary_packet_limit(self):

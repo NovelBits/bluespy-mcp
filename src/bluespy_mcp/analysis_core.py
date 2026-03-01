@@ -257,7 +257,7 @@ def extract_device_info(devices) -> list[dict]:
                     info["address"] = ":".join(f"{b:02X}" for b in addr[:6])
                     break
                 if isinstance(addr, str) and addr:
-                    info["address"] = addr
+                    info["address"] = addr.upper()
                     break
             except (AttributeError, Exception):
                 continue
@@ -391,13 +391,14 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
             summary = pkt.summary
             if "ADV" not in summary.upper():
                 continue
-            # Filter to this device by matching address
+            # Filter to this device by matching address (case-insensitive)
             if device_address:
-                if device_address in summary:
+                addr_upper = device_address.upper()
+                if addr_upper in summary.upper():
                     pass  # match via summary text
                 else:
                     pkt_addr = _extract_adv_address(pkt)
-                    if pkt_addr != device_address:
+                    if pkt_addr.upper() != addr_upper:
                         continue
 
             adv_info: dict[str, Any] = {"index": i, "summary": summary}
