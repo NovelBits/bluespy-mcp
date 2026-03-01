@@ -71,7 +71,7 @@ _REBOOT_WAIT_SECONDS = 3.0
 
 
 def handle_command(bluespy: Any, cmd: dict) -> dict:
-    """Execute a single hardware command against the bluespy module.
+    """Execute a single command against the bluespy module.
 
     Args:
         bluespy: The loaded bluespy module.
@@ -84,7 +84,40 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
     action = cmd.get("cmd")
 
     try:
-        if action == "connect":
+        # --- File management commands ---
+
+        if action == "load_file":
+            path = cmd["path"]
+            bluespy.load_file(path)
+            packet_count = len(bluespy.packets)
+            return {"ok": True, "data": {"packet_count": packet_count}}
+
+        elif action == "close_file":
+            bluespy.close_file()
+            return {"ok": True, "data": {}}
+
+        elif action == "get_metadata":
+            total = len(bluespy.packets)
+            result: dict[str, Any] = {"packet_count": total}
+            if total > 0:
+                try:
+                    first_ts = int(bluespy.packets[0].time)
+                    last_ts = int(bluespy.packets[total - 1].time)
+                    result["first_timestamp_ns"] = first_ts
+                    result["last_timestamp_ns"] = last_ts
+                    result["duration_ns"] = last_ts - first_ts
+                    result["duration_seconds"] = round((last_ts - first_ts) / 1e9, 3)
+                except (AttributeError, TypeError, ValueError, OverflowError):
+                    pass
+            result["devices"] = extract_device_info(bluespy.devices)
+            result["connections"] = extract_connection_info(bluespy.connections)
+            result["device_count"] = len(result["devices"])
+            result["connection_count"] = len(result["connections"])
+            return {"ok": True, "data": result}
+
+        # --- Hardware commands ---
+
+        elif action == "connect":
             serial = cmd.get("serial", -1)
             # Always reboot first to clear stale hardware state
             try:
@@ -188,11 +221,17 @@ def handle_command(bluespy: Any, cmd: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def worker_loop(cmd_queue, result_queue):
-    """Main loop for the hardware worker subprocess.
+def worker_loop(cmd_queue, result_queue, mode="hardware"):
+    """Main loop for the worker subprocess.
 
     Imports bluespy on first command, then processes commands until
     a "shutdown" command or the queue is empty and parent is gone.
+
+    Args:
+        cmd_queue: Queue to receive commands from the parent.
+        result_queue: Queue to send results back to the parent.
+        mode: "hardware" for live capture (validates USB health),
+              "file" for file-only analysis (skips USB checks).
     """
     from bluespy_mcp.loader import get_bluespy
 
@@ -204,9 +243,10 @@ def worker_loop(cmd_queue, result_queue):
 
     try:
         bluespy = get_bluespy()
-        # Verify bluespy is functional — bluespy_init can fail silently,
-        # leaving the module loaded but hardware operations broken.
-        bluespy.connected_morephs()
+        if mode == "hardware":
+            # Verify bluespy is functional — bluespy_init can fail silently,
+            # leaving the module loaded but hardware operations broken.
+            bluespy.connected_morephs()
     except Exception as e:
         result_queue.put({"ok": False, "error": f"Failed to load BlueSPY: {e}"})
         if multiprocessing.current_process().name != "MainProcess":
@@ -217,7 +257,7 @@ def worker_loop(cmd_queue, result_queue):
     result_queue.put({"ok": True, "data": {"status": "ready"}})
 
     # Track whether we opened a hardware connection so we know
-    # whether USB release is needed on exit.
+    # whether USB release is needed on exit (hardware mode only).
     was_connected = False
 
     while True:
@@ -230,15 +270,16 @@ def worker_loop(cmd_queue, result_queue):
             break
 
         if cmd.get("cmd") == "shutdown":
-            try:
-                bluespy.disconnect()
-            except Exception:
-                pass
+            if mode == "hardware":
+                try:
+                    bluespy.disconnect()
+                except Exception:
+                    pass
             result_queue.put({"ok": True, "data": {"status": "shutdown"}})
             break
 
         result = handle_command(bluespy, cmd)
-        if cmd.get("cmd") == "connect" and result.get("ok"):
+        if mode == "hardware" and cmd.get("cmd") == "connect" and result.get("ok"):
             was_connected = True
         result_queue.put(result)
 
@@ -247,7 +288,7 @@ def worker_loop(cmd_queue, result_queue):
     # release USB after a connect/disconnect cycle, and
     # multiprocessing.Process calls os._exit internally so atexit
     # handlers never run in subprocesses anyway.
-    if was_connected:
+    if mode == "hardware" and was_connected:
         try:
             bluespy.reboot_moreph(-1)
         except Exception:

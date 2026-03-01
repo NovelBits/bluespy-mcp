@@ -16,14 +16,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from bluespy_mcp.analyzer import (
-    analyze_advertising,
-    analyze_connection,
-    classify_packet,
-    find_errors,
-    find_packets,
-    summarize_capture,
-)
 from bluespy_mcp.capture import CaptureManager
 from bluespy_mcp.hardware import HardwareManager, HardwareError, HardwareState
 
@@ -315,7 +307,7 @@ def capture_summary() -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.get_summary())
-        return _json(summarize_capture(_capture))
+        return _json(_capture.get_summary())
     except Exception as e:
         return _error(str(e))
 
@@ -328,11 +320,7 @@ def list_devices() -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.get_devices())
-        devices = _capture.get_devices()
-        return _json({
-            "count": len(devices),
-            "devices": [d.to_dict() for d in devices],
-        })
+        return _json(_capture.get_devices())
     except Exception as e:
         return _error(str(e))
 
@@ -345,11 +333,7 @@ def list_connections() -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.get_connections())
-        connections = _capture.get_connections()
-        return _json({
-            "count": len(connections),
-            "connections": [c.to_dict() for c in connections],
-        })
+        return _json(_capture.get_connections())
     except Exception as e:
         return _error(str(e))
 
@@ -382,14 +366,12 @@ def search_packets(
                 channel=channel,
                 max_results=max_results,
             ))
-        results = find_packets(
-            _capture,
+        return _json(_capture.search_packets(
             summary_contains=summary_contains,
             packet_type=packet_type,
             channel=channel,
             max_results=max_results,
-        )
-        return _json({"count": len(results), "packets": results})
+        ))
     except Exception as e:
         return _error(str(e))
 
@@ -406,7 +388,7 @@ def inspect_connection(connection_index: int = 0) -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.inspect_connection_live(connection_index))
-        return _json(analyze_connection(_capture, connection_index))
+        return _json(_capture.inspect_connection(connection_index))
     except Exception as e:
         return _error(str(e))
 
@@ -423,7 +405,7 @@ def inspect_advertising(device_index: int = 0) -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.inspect_advertising_live(device_index))
-        return _json(analyze_advertising(_capture, device_index))
+        return _json(_capture.inspect_advertising(device_index))
     except Exception as e:
         return _error(str(e))
 
@@ -440,8 +422,7 @@ def find_capture_errors(max_results: int = 100) -> str:
     try:
         if _hardware.state == HardwareState.CAPTURING:
             return _json(_hardware.get_errors(max_results=max_results))
-        errors = find_errors(_capture, max_results=max_results)
-        return _json({"count": len(errors), "errors": errors})
+        return _json(_capture.get_errors(max_results=max_results))
     except Exception as e:
         return _error(str(e))
 

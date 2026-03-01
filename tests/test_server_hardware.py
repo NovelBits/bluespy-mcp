@@ -305,12 +305,13 @@ class TestLiveAnalysisRouting:
 
     def test_file_analysis_still_works(self, idle_hw):
         """When hw is IDLE and a file is loaded, use existing capture path."""
-        mock_device = MagicMock()
-        mock_device.to_dict.return_value = {"address": "11:22:33:44:55:66"}
         with patch("bluespy_mcp.server._hardware", idle_hw), \
              patch("bluespy_mcp.server._capture") as mock_cap:
             mock_cap.is_loaded = True
-            mock_cap.get_devices.return_value = [mock_device]
+            mock_cap.get_devices.return_value = {
+                "count": 1,
+                "devices": [{"address": "11:22:33:44:55:66"}],
+            }
             from bluespy_mcp.server import list_devices
             result = json.loads(list_devices())
         mock_cap.get_devices.assert_called_once()

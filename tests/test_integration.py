@@ -76,13 +76,13 @@ class TestRealCaptureLoading:
         from bluespy_mcp.capture import CaptureManager
 
         mgr = CaptureManager()
-        mgr.load(str(CAPTURE_5SEC))
-        count1 = mgr.packet_count
+        result1 = mgr.load(str(CAPTURE_5SEC))
+        count1 = result1["packet_count"]
         mgr.close()
         assert not mgr.is_loaded
 
-        mgr.load(str(CAPTURE_5SEC))
-        assert mgr.packet_count == count1
+        result2 = mgr.load(str(CAPTURE_5SEC))
+        assert result2["packet_count"] == count1
         mgr.close()
 
 
@@ -121,11 +121,12 @@ class TestRealMetadata:
 
         with CaptureManager() as mgr:
             mgr.load(str(CAPTURE_5SEC))
-            devices = mgr.get_devices()
+            result = mgr.get_devices()
 
+        devices = result["devices"]
         assert len(devices) > 0
         # At least some devices should have addresses parsed from summary
-        addresses = [d.address for d in devices if d.address]
+        addresses = [d["address"] for d in devices if d.get("address")]
         assert len(addresses) > 0
         # Addresses should be MAC format
         for addr in addresses[:5]:
@@ -133,15 +134,14 @@ class TestRealMetadata:
 
 
 class TestRealAnalyzer:
-    """Test analyzer functions against real capture data."""
+    """Test analysis functions against real capture data via worker subprocess."""
 
     def test_summarize_real_capture(self):
         from bluespy_mcp.capture import CaptureManager
-        from bluespy_mcp.analyzer import summarize_capture
 
         with CaptureManager() as mgr:
             mgr.load(str(CAPTURE_5SEC))
-            summary = summarize_capture(mgr)
+            summary = mgr.get_summary()
 
         assert summary["packet_count"] > 0
         assert "packet_type_counts" in summary
@@ -154,13 +154,13 @@ class TestRealAnalyzer:
 
     def test_find_packets_by_type(self):
         from bluespy_mcp.capture import CaptureManager
-        from bluespy_mcp.analyzer import find_packets
 
         with CaptureManager() as mgr:
             mgr.load(str(CAPTURE_5SEC))
             # ADV_IND is the most common advertising packet
-            adv_packets = find_packets(mgr, packet_type="ADV_IND", max_results=10)
+            result = mgr.search_packets(packet_type="ADV_IND", max_results=10)
 
+        adv_packets = result["packets"]
         # A 5-sec capture should have some advertising packets
         assert len(adv_packets) > 0
         for pkt in adv_packets:
@@ -169,12 +169,12 @@ class TestRealAnalyzer:
 
     def test_find_packets_with_rssi(self):
         from bluespy_mcp.capture import CaptureManager
-        from bluespy_mcp.analyzer import find_packets
 
         with CaptureManager() as mgr:
             mgr.load(str(CAPTURE_5SEC))
-            packets = find_packets(mgr, max_results=5)
+            result = mgr.search_packets(max_results=5)
 
+        packets = result["packets"]
         # Packets should have rssi from real captures
         packets_with_rssi = [p for p in packets if "rssi" in p]
         assert len(packets_with_rssi) > 0
@@ -183,12 +183,12 @@ class TestRealAnalyzer:
 
     def test_find_errors(self):
         from bluespy_mcp.capture import CaptureManager
-        from bluespy_mcp.analyzer import find_errors
 
         with CaptureManager() as mgr:
             mgr.load(str(CAPTURE_5SEC))
-            errors = find_errors(mgr)
+            result = mgr.get_errors()
 
+        errors = result["errors"]
         # CRC errors are common in real captures
         # Just verify the function runs without crashing
         assert isinstance(errors, list)
