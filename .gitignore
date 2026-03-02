@@ -8,3 +8,6 @@ build/
 *.pcapng
 !tests/fixtures/*.pcapng
 .DS_Store
+.claude/
+.mcp.json
+captures/
