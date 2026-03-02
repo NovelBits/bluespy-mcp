@@ -270,3 +270,93 @@ class TestAnalysisCoreWithCachedPackets:
         cached_result = analyze_advertising_live(devices, cached)
 
         assert raw_result == cached_result
+
+
+class TestCachedClassifiedProperty:
+    """Verify the classified property on CachedPacket works."""
+
+    def test_classified_property(self):
+        cache = build_cache(_sample_packets())
+        pkt = CachedPacket(cache, 0)
+        assert pkt.classified == "ADV_IND"
+
+    def test_classified_query(self):
+        cache = build_cache(_sample_packets())
+        pkt = CachedPacket(cache, 0)
+        assert pkt.query("classified") == "ADV_IND"
+
+    def test_classified_matches_classify_packet(self):
+        raw = _sample_packets()
+        cache = build_cache(raw)
+        for i in range(len(raw)):
+            expected = classify_packet(raw[i].summary)
+            assert CachedPacket(cache, i).classified == expected
+
+
+class TestErrorIndicesPrecomputed:
+    """Verify error_indices are populated during cache build."""
+
+    def test_error_indices_populated(self):
+        cache = build_cache(_sample_packets())
+        # _sample_packets has LL_TERMINATE_IND at index 5
+        assert 5 in cache.error_indices
+
+    def test_error_indices_empty_for_no_errors(self):
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ATT Read Request", time=2000, rssi=-50, channel=5),
+        ])
+        cache = build_cache(packets)
+        assert cache.error_indices == []
+
+    def test_error_indices_multiple_errors(self):
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CRC ERROR", time=2000, rssi=-55, channel=37),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="LL_TERMINATE_IND Reason: TIMEOUT", time=4000, rssi=-55, channel=5),
+        ])
+        cache = build_cache(packets)
+        assert cache.error_indices == [1, 3]
+
+    def test_find_error_packets_uses_precomputed(self):
+        """Cached path should produce same results as raw path."""
+        raw = _sample_packets()
+        cached = CachedPackets(build_cache(raw))
+        raw_result = find_error_packets(raw)
+        cached_result = find_error_packets(cached)
+        assert raw_result == cached_result
+
+    def test_find_error_packets_cached_with_start(self):
+        packets = MockPackets([
+            MockPacket(summary="ERROR at 0", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ADV_IND", time=2000, rssi=-55, channel=37),
+            MockPacket(summary="TIMEOUT at 2", time=3000, rssi=-55, channel=5),
+        ])
+        cached = CachedPackets(build_cache(packets))
+        errors = find_error_packets(cached, start=1)
+        assert len(errors) == 1
+        assert errors[0]["index"] == 2
+
+    def test_find_error_packets_cached_max_results(self):
+        packets = MockPackets([
+            MockPacket(summary=f"ERROR #{i}", time=i * 1000, rssi=-55, channel=37)
+            for i in range(10)
+        ])
+        cached = CachedPackets(build_cache(packets))
+        errors = find_error_packets(cached, max_results=3)
+        assert len(errors) == 3
+
+    def test_extend_cache_adds_error_indices(self):
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
+        ])
+        cache = build_cache(packets)
+        assert cache.error_indices == []
+
+        more = MockPackets([
+            MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="DISCONNECT event", time=2000, rssi=-55, channel=5),
+        ])
+        extend_cache(cache, more, 1)
+        assert 1 in cache.error_indices

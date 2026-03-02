@@ -12,6 +12,7 @@ from bluespy_mcp.analysis_core import (
     extract_connection_info,
     analyze_connection_live,
     analyze_advertising_live,
+    analyze_all_advertising,
     ERROR_KEYWORDS,
     SUMMARY_PACKET_LIMIT,
 )
@@ -354,6 +355,90 @@ class TestAnalyzeAdvertisingLive:
         result = analyze_advertising_live(devices, packets, device_index=0)
         assert result["advertisement_count"] == 2
         assert result["address"] == "AA:BB:CC:DD:EE:FF"  # normalized to uppercase
+
+
+class TestAnalyzeAllAdvertising:
+    def _make_data(self):
+        devices = [
+            MockDevice(_address="AA:BB:CC:DD:EE:FF"),
+            MockDevice(_address="11:22:33:44:55:66"),
+        ]
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1100, rssi=-60, channel=38),
+            MockPacket(summary="ADV_IND from 11:22:33:44:55:66", time=1200, rssi=-70, channel=39),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+        ])
+        return devices, packets
+
+    def test_basic_returns_all_devices(self):
+        devs, pkts = self._make_data()
+        result = analyze_all_advertising(devs, pkts)
+        assert result["total_devices"] == 2
+        assert len(result["devices"]) == 2
+        # First device has 2 ADV packets
+        dev0 = result["devices"][0]
+        assert dev0["address"] == "AA:BB:CC:DD:EE:FF"
+        assert dev0["advertisement_count"] == 2
+        # Second device has 1 ADV packet
+        dev1 = result["devices"][1]
+        assert dev1["address"] == "11:22:33:44:55:66"
+        assert dev1["advertisement_count"] == 1
+
+    def test_empty_packets(self):
+        devices = [MockDevice(), MockDevice(_address="11:22:33:44:55:66")]
+        result = analyze_all_advertising(devices, MockPackets([]))
+        assert result["total_devices"] == 2
+        for dev in result["devices"]:
+            assert dev["advertisement_count"] == 0
+
+    def test_no_devices(self):
+        result = analyze_all_advertising([], MockPackets([]))
+        assert result["total_devices"] == 0
+        assert result["devices"] == []
+
+    def test_rssi_stats(self):
+        devs, pkts = self._make_data()
+        result = analyze_all_advertising(devs, pkts)
+        dev0 = result["devices"][0]
+        assert dev0["rssi_min"] == -60
+        assert dev0["rssi_max"] == -55
+        assert dev0["rssi_avg"] == -57.5
+        dev1 = result["devices"][1]
+        assert dev1["rssi_min"] == -70
+        assert dev1["rssi_max"] == -70
+        assert dev1["rssi_avg"] == -70.0
+
+    def test_sample_limit(self):
+        devices = [MockDevice()]
+        packets = MockPackets([
+            MockPacket(summary=f"ADV_IND from AA:BB:CC:DD:EE:FF #{i}", time=i * 1000, rssi=-55, channel=37)
+            for i in range(30)
+        ])
+        result = analyze_all_advertising(devices, packets)
+        dev = result["devices"][0]
+        assert dev["advertisement_count"] == 30
+        assert len(dev["advertisements_sample"]) == 10  # capped at 10
+
+    def test_matches_individual_counts(self):
+        """Batch counts should match calling analyze_advertising_live per device."""
+        devs, pkts = self._make_data()
+        batch = analyze_all_advertising(devs, pkts)
+        for i, dev in enumerate(batch["devices"]):
+            individual = analyze_advertising_live(devs, pkts, device_index=i)
+            assert dev["advertisement_count"] == individual["advertisement_count"], (
+                f"Device {i} ({dev['address']}): batch={dev['advertisement_count']}, "
+                f"individual={individual['advertisement_count']}"
+            )
+
+    def test_channels_used(self):
+        devs, pkts = self._make_data()
+        result = analyze_all_advertising(devs, pkts)
+        dev0 = result["devices"][0]
+        assert 37 in dev0["channels_used"]
+        assert 38 in dev0["channels_used"]
+        dev1 = result["devices"][1]
+        assert 39 in dev1["channels_used"]
 
 
 class TestConstants:

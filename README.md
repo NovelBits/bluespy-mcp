@@ -156,6 +156,7 @@ Add to your MCP server configuration:
 | `search_packets(summary_contains?, packet_type?, channel?, max_results?)` | Filter packets by criteria |
 | `inspect_connection(connection_index)` | Deep-dive connection analysis with packet breakdown |
 | `inspect_advertising(device_index)` | Per-device advertising analysis with RSSI and channel stats |
+| `inspect_all_devices()` | Batch advertising analysis for ALL devices in a single pass (much faster than per-device calls) |
 | `find_capture_errors(max_results?)` | Error, failure, disconnect, and timeout packets |
 
 ### Live Hardware
@@ -205,6 +206,21 @@ Claude: 12,847 packets over 10 seconds.
 ```
 
 Hardware access is subprocess-isolated — if a hardware call hangs, the MCP server kills the worker process and stays responsive. A file lock (`~/.bluespy-mcp.lock`) ensures only one client controls the hardware at a time.
+
+## Model Recommendations
+
+This MCP server works with any LLM that supports tool use. The built-in prompt templates (`analyze-capture`, `quick-capture`, `debug-connection`) guide even smaller models through the correct multi-step workflows.
+
+| Tier | Models | Best For |
+|------|--------|----------|
+| **Minimum** | Haiku 4.5, GPT-4o mini, Gemini Flash | Loading captures, running guided workflows, basic summaries. Handles the full tool chain reliably. |
+| **Recommended** | Sonnet 4.5, GPT-4o, Gemini Pro | Deeper protocol analysis — correlating error patterns across connections, interpreting RSSI trends, diagnosing RF interference, generating actionable recommendations. |
+| **Advanced** | Opus, o3, Gemini Ultra | Multi-capture comparison, cross-referencing against Bluetooth spec, complex protocol-level debugging. Rarely needed. |
+
+**Key factors for good results:**
+- **Use the prompt templates.** They walk any model through load → summarize → analyze → inspect in the right order.
+- **Tool-use reliability matters more than model size.** A mid-tier model that follows tool sequences correctly will outperform a large model that skips steps.
+- **Domain knowledge helps but isn't required.** The server returns structured JSON with classified packet types, so the model doesn't need to know Bluetooth LE internals to report useful findings.
 
 ## Troubleshooting
 

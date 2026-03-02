@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from bluespy_mcp.analysis_core import classify_packet
+from bluespy_mcp.analysis_core import ERROR_KEYWORDS, classify_packet
 
 
 @dataclass
@@ -25,6 +25,7 @@ class PacketCache:
     channels: list[int] = field(default_factory=list)
     payloads: list[bytes | None] = field(default_factory=list)
     classified: list[str] = field(default_factory=list)
+    error_indices: list[int] = field(default_factory=list)
 
 
 class CachedPacket:
@@ -56,6 +57,10 @@ class CachedPacket:
     def channel(self) -> int:
         return self._cache.channels[self._index]
 
+    @property
+    def classified(self) -> str:
+        return self._cache.classified[self._index]
+
     def query(self, name: str):
         if name == "payload":
             return self._cache.payloads[self._index]
@@ -67,6 +72,8 @@ class CachedPacket:
             return self.rssi
         if name == "channel":
             return self.channel
+        if name == "classified":
+            return self.classified
         raise AttributeError(f"No cached field: {name}")
 
     def query_str(self, name: str) -> str:
@@ -115,6 +122,7 @@ def build_cache(packets) -> PacketCache:
     channels = []
     payloads = []
     classified = []
+    error_indices = []
 
     for i in range(n):
         pkt = packets[i]
@@ -148,7 +156,11 @@ def build_cache(packets) -> PacketCache:
 
         classified.append(classify_packet(s))
 
-    return PacketCache(summaries, times, rssis, channels, payloads, classified)
+        s_upper = s.upper()
+        if any(kw in s_upper for kw in ERROR_KEYWORDS):
+            error_indices.append(i)
+
+    return PacketCache(summaries, times, rssis, channels, payloads, classified, error_indices)
 
 
 def extend_cache(cache: PacketCache, packets, from_index: int) -> None:
@@ -189,3 +201,7 @@ def extend_cache(cache: PacketCache, packets, from_index: int) -> None:
             cache.payloads.append(None)
 
         cache.classified.append(classify_packet(s))
+
+        s_upper = s.upper()
+        if any(kw in s_upper for kw in ERROR_KEYWORDS):
+            cache.error_indices.append(i)

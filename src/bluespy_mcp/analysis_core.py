@@ -115,7 +115,7 @@ def summarize_packets(packets, limit: int | None = None) -> dict:
     for i in range(cap):
         pkt = packets[i]
         try:
-            pkt_type = classify_packet(pkt.summary)
+            pkt_type = getattr(pkt, "classified", None) or classify_packet(pkt.summary)
             type_counts[pkt_type] = type_counts.get(pkt_type, 0) + 1
         except (AttributeError, Exception):
             type_counts["unknown"] = type_counts.get("unknown", 0) + 1
@@ -185,8 +185,10 @@ def filter_packets(
 
         if search_term and search_term not in summary.upper():
             continue
-        if packet_type and classify_packet(summary).upper() != packet_type.upper():
-            continue
+        if packet_type:
+            pkt_class = getattr(pkt, "classified", None) or classify_packet(summary)
+            if pkt_class.upper() != packet_type.upper():
+                continue
         if channel is not None:
             try:
                 if pkt.channel != channel:
@@ -214,12 +216,34 @@ def filter_packets(
 def find_error_packets(packets, *, max_results: int = 100, start: int = 0) -> list[dict]:
     """Find error, failure, and disconnect packets.
 
+    Uses precomputed error_indices from PacketCache when available (O(e)
+    where e = error count), otherwise falls back to full scan (O(n)).
+
     Args:
-        packets: Indexable packet list.
+        packets: Indexable packet list (CachedPackets or raw).
         max_results: Maximum errors to return.
         start: Start index.
     """
-    errors: list[dict] = []
+    # Fast path: use precomputed error indices from cache
+    cache = getattr(packets, "_cache", None)
+    if cache is not None and hasattr(cache, "error_indices"):
+        errors: list[dict] = []
+        for i in cache.error_indices:
+            if i < start:
+                continue
+            if len(errors) >= max_results:
+                break
+            pkt = packets[i]
+            error_info: dict[str, Any] = {"index": i, "summary": pkt.summary}
+            try:
+                error_info["time"] = pkt.time
+            except (AttributeError, Exception):
+                pass
+            errors.append(error_info)
+        return errors
+
+    # Slow path: full scan for raw packets
+    errors = []
     total = len(packets)
 
     for i in range(start, total):
@@ -230,7 +254,7 @@ def find_error_packets(packets, *, max_results: int = 100, start: int = 0) -> li
             summary = pkt.summary
             summary_upper = summary.upper()
             if any(kw in summary_upper for kw in ERROR_KEYWORDS):
-                error_info: dict[str, Any] = {"index": i, "summary": summary}
+                error_info = {"index": i, "summary": summary}
                 try:
                     error_info["time"] = pkt.time
                 except (AttributeError, Exception):
@@ -441,6 +465,97 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
         result["rssi_avg"] = round(sum(rssi_values) / len(rssi_values), 1)
 
     return result
+
+
+def analyze_all_advertising(devices, packets) -> dict:
+    """Analyze advertising data for ALL devices in a single packet pass.
+
+    Instead of calling analyze_advertising_live() N times (each iterating
+    all packets), this iterates packets once and buckets by device address.
+    """
+    dev_list = extract_device_info(devices)
+    if not dev_list:
+        return {"devices": [], "total_devices": 0}
+
+    # Build address lookup — uppercase for case-insensitive matching
+    known_addrs = {d["address"].upper() for d in dev_list if d.get("address")}
+
+    # Per-device accumulators (keyed by uppercase address)
+    adv_packets: dict[str, list[dict]] = {a: [] for a in known_addrs}
+    channels_seen: dict[str, set[int]] = {a: set() for a in known_addrs}
+    rssi_values: dict[str, list[int]] = {a: [] for a in known_addrs}
+
+    total = len(packets)
+    for i in range(total):
+        pkt = packets[i]
+        try:
+            summary = pkt.summary
+            if "ADV" not in summary.upper():
+                continue
+
+            # Determine which device this packet belongs to
+            matched_addr = None
+
+            # Fast path: check summary text for known addresses
+            summary_upper = summary.upper()
+            for addr in known_addrs:
+                if addr in summary_upper:
+                    matched_addr = addr
+                    break
+
+            # Slow path: extract from payload
+            if matched_addr is None:
+                pkt_addr = _extract_adv_address(pkt).upper()
+                if pkt_addr in known_addrs:
+                    matched_addr = pkt_addr
+
+            if matched_addr is None:
+                continue
+
+            # Collect packet info
+            adv_info: dict[str, Any] = {"index": i, "summary": summary}
+            try:
+                adv_info["rssi"] = pkt.rssi
+                rssi_values[matched_addr].append(pkt.rssi)
+            except (AttributeError, Exception):
+                pass
+            try:
+                adv_info["channel"] = pkt.channel
+                channels_seen[matched_addr].add(pkt.channel)
+            except (AttributeError, Exception):
+                pass
+            try:
+                payload = pkt.query("payload")
+                if isinstance(payload, bytes) and payload:
+                    adv_info["payload_hex"] = payload.hex()
+            except (AttributeError, Exception):
+                pass
+            adv_packets[matched_addr].append(adv_info)
+
+        except (AttributeError, Exception):
+            continue
+
+    # Build per-device results
+    results = []
+    for dev_info in dev_list:
+        addr = dev_info.get("address", "").upper()
+        pkts = adv_packets.get(addr, [])
+        rssis = rssi_values.get(addr, [])
+
+        device_result: dict[str, Any] = {
+            "address": dev_info.get("address", ""),
+            "name": dev_info.get("name", ""),
+            "advertisement_count": len(pkts),
+            "advertisements_sample": pkts[:10],  # Fewer per device in batch mode
+            "channels_used": sorted(channels_seen.get(addr, set())),
+        }
+        if rssis:
+            device_result["rssi_min"] = min(rssis)
+            device_result["rssi_max"] = max(rssis)
+            device_result["rssi_avg"] = round(sum(rssis) / len(rssis), 1)
+        results.append(device_result)
+
+    return {"devices": results, "total_devices": len(results)}
 
 
 def extract_connection_info(connections) -> list[dict]:

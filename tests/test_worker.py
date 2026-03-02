@@ -538,3 +538,28 @@ class TestLiveAnalysisCommands:
         result, _ = handle_command(mock, {"cmd": "inspect_advertising"})
         assert result["ok"] is True
         assert "error" in result["data"]
+
+    def test_inspect_all_devices(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result, _ = handle_command(mock, {"cmd": "inspect_all_devices"})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["total_devices"] == 2
+        assert len(data["devices"]) == 2
+        # First device should have ADV packets
+        dev0 = data["devices"][0]
+        assert dev0["address"] == "AA:BB:CC:DD:EE:FF"
+        assert dev0["advertisement_count"] > 0
+        assert "channels_used" in dev0
+
+    def test_inspect_all_devices_empty(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        mock.devices = []
+        result, _ = handle_command(mock, {"cmd": "inspect_all_devices"})
+        assert result["ok"] is True
+        assert result["data"]["total_devices"] == 0
+        assert result["data"]["devices"] == []

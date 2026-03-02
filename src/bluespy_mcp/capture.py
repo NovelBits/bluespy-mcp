@@ -39,6 +39,7 @@ _TIMEOUTS = {
     "get_errors": 10,
     "inspect_connection": 15,
     "inspect_advertising": 15,
+    "inspect_all_devices": 30,
 }
 
 
@@ -256,6 +257,14 @@ class CaptureManager:
         result = self._send_command(
             {"cmd": "inspect_advertising", "device_index": device_index}
         )
+        if not result["ok"]:
+            raise RuntimeError(result["error"])
+        return result["data"]
+
+    def inspect_all_devices(self) -> dict:
+        """Inspect advertising data for all devices in a single pass."""
+        self._require_loaded()
+        result = self._send_command({"cmd": "inspect_all_devices"})
         if not result["ok"]:
             raise RuntimeError(result["error"])
         return result["data"]

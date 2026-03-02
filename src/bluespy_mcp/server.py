@@ -492,6 +492,26 @@ def inspect_advertising(device_index: int = 0) -> str:
 
 
 @mcp.tool
+def inspect_all_devices() -> str:
+    """Analyze advertising data for ALL devices in a single pass.
+
+    Much faster than calling inspect_advertising() for each device.
+    Returns advertising stats (packet count, RSSI, channels, sample)
+    for every discovered device. Use this when you need to analyze
+    multiple devices — then use inspect_advertising(device_index)
+    only for deep dives on specific devices of interest.
+    """
+    if not _data_available():
+        return _not_ready()
+    try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.inspect_all_devices())
+        return _json(_capture.inspect_all_devices())
+    except Exception as e:
+        return _error(str(e))
+
+
+@mcp.tool
 def find_capture_errors(max_results: int = 100) -> str:
     """Find all error, failure, and disconnect packets in the loaded capture.
 
