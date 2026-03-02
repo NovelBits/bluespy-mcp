@@ -1,4 +1,4 @@
-"""Shared test fixtures — mock BlueSPY module for unit testing without hardware."""
+"""Shared test fixtures — mock blueSPY module for unit testing without hardware."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 
 @dataclass
 class MockPacket:
-    """Simulates a BlueSPY event_id with query support.
+    """Simulates a blueSPY event_id with query support.
 
     Real API uses query("time") not query("timestamp").
     Direct attribute access (pkt.summary) goes through __getattr__ → query().
@@ -45,7 +45,7 @@ class MockPacket:
 
 @dataclass
 class MockDevice:
-    """Simulates a BlueSPY device.
+    """Simulates a blueSPY device.
 
     Real API: query("address") and query("name") raise AttributeError.
     Address is parsed from query("summary") which returns "AA:BB:CC:DD:EE:FF, Static".
@@ -70,7 +70,7 @@ class MockDevice:
 
 @dataclass
 class MockConnection:
-    """Simulates a BlueSPY connection.
+    """Simulates a blueSPY connection.
 
     Real API: query("interval"), query("latency"), query("timeout") all raise AttributeError.
     Only query("summary") works.
@@ -107,7 +107,7 @@ class MockPackets:
 
 @pytest.fixture
 def mock_bluespy():
-    """Create a mock BlueSPY module with sample data."""
+    """Create a mock blueSPY module with sample data."""
     module = MagicMock()
 
     sample_packets = [

@@ -1,6 +1,6 @@
-# BlueSPY MCP Server
+# blueSPY MCP Server
 
-MCP server for the [BlueSPY](https://rfcreations.com) Bluetooth LE protocol analyzer. Gives AI assistants direct access to .pcapng capture analysis — turn packet captures into conversations instead of writing scripts or scrolling through Wireshark.
+MCP server for the [blueSPY](https://rfcreations.com) Bluetooth LE protocol analyzer. Gives AI assistants direct access to .pcapng capture analysis — turn packet captures into conversations instead of writing scripts or scrolling through Wireshark.
 
 Works with Claude Desktop, Claude Code, and Cursor.
 
@@ -46,9 +46,9 @@ No scripts. No manual filtering. Just a conversation.
 ## Prerequisites
 
 - **Python 3.10+**
-- **BlueSPY application** (free) — provides the native `libblueSPY` library required for packet parsing
+- **blueSPY application** (free) — provides the native `libblueSPY` library required for packet parsing
 
-Download BlueSPY for your platform from [rfcreations.com/bluespy-software](https://www.rfcreations.com/bluespy-software):
+Download blueSPY for your platform from [rfcreations.com/bluespy-software](https://www.rfcreations.com/bluespy-software):
 
 | Platform | Download |
 |----------|----------|
@@ -201,7 +201,7 @@ Add to your MCP server configuration:
 
 ## Try It Without Hardware
 
-Download the [example captures](https://www.rfcreations.com/bluespy-software) from RFcreations (free) and try these prompts. No sniffer needed — just the BlueSPY application installed.
+Download the [example captures](https://www.rfcreations.com/bluespy-software) from RFcreations (free) and try these prompts. No sniffer needed — just the blueSPY application installed.
 
 ### Example Captures
 
@@ -256,7 +256,7 @@ Or use the built-in `analyze-capture` prompt for a guided walkthrough of any fil
 
 ## Live Hardware Capture
 
-If you have a BlueSPY sniffer connected via USB, the MCP server can control it directly — connect, start/stop captures, and analyze results in real time.
+If you have a blueSPY sniffer connected via USB, the MCP server can control it directly — connect, start/stop captures, and analyze results in real time.
 
 ```
 You: Connect to my sniffer and capture Bluetooth LE traffic for 10 seconds.
@@ -300,7 +300,7 @@ pip install -e .
 pytest
 ```
 
-To run the full test suite including end-to-end and hardware tests (requires a BlueSPY sniffer connected via USB):
+To run the full test suite including end-to-end and hardware tests (requires a blueSPY sniffer connected via USB):
 
 ```bash
 pip install -e ".[e2e]"
@@ -309,9 +309,9 @@ bash scripts/test.sh all
 
 ## Troubleshooting
 
-### "BlueSPY library not found"
+### "blueSPY library not found"
 
-Ensure `BLUESPY_LIBRARY_PATH` points to the correct native library for your platform. The BlueSPY application must be installed from [rfcreations.com](https://rfcreations.com).
+Ensure `BLUESPY_LIBRARY_PATH` points to the correct native library for your platform. The blueSPY application must be installed from [rfcreations.com](https://rfcreations.com).
 
 ### "No capture file loaded"
 
@@ -326,7 +326,7 @@ If you're using FastMCP v3.0.2+, ensure the server runs with `show_banner=False`
 The MCP server retries automatically when this happens, but if it persists:
 
 1. **Connect directly to your computer** — do not use a USB hub. The Moreph sniffer requires a direct USB connection for reliable communication.
-2. **Close the BlueSPY desktop app** if it's open. Only one application can control the hardware at a time. Check the device LED: green means it's in use, blue means it's available.
+2. **Close the blueSPY desktop app** if it's open. Only one application can control the hardware at a time. Check the device LED: green means it's in use, blue means it's available.
 3. **Unplug and replug** the device, then try again.
 
 ### Hardware: "in use by another session"
@@ -341,7 +341,7 @@ This removes the stale lock file and proceeds with the connection.
 
 ### Hardware: Python crash on exit
 
-You may see a macOS crash report (`Python quit unexpectedly`) after using hardware tools. This is a known issue with the BlueSPY native library's cleanup routine (`bluespy_deinit`) and does not affect capture data or MCP server operation. The crash occurs during process exit and can be safely dismissed.
+You may see a macOS crash report (`Python quit unexpectedly`) after using hardware tools. This is a known issue with the blueSPY native library's cleanup routine (`bluespy_deinit`) and does not affect capture data or MCP server operation. The crash occurs during process exit and can be safely dismissed.
 
 ### Module not found errors
 
@@ -358,6 +358,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- [BlueSPY by RFcreations](https://rfcreations.com)
+- [blueSPY by RFcreations](https://rfcreations.com)
 - [MCP Protocol](https://modelcontextprotocol.io)
 - [Issues](https://github.com/novelbits/bluespy-mcp/issues)

@@ -1,8 +1,8 @@
-"""Auto-discover and load the BlueSPY Python API.
+"""Auto-discover and load the blueSPY Python API.
 
 Resolution order:
 1. BLUESPY_API_PATH env var (explicit directory containing bluespy.py)
-2. Platform-specific BlueSPY application install paths
+2. Platform-specific blueSPY application install paths
 3. Direct import (already on PYTHONPATH)
 4. Bundled fallback (_vendor/bluespy.py)
 """
@@ -68,7 +68,7 @@ def _try_env_path() -> ModuleType | None:
     logger.debug(f"Trying BLUESPY_API_PATH: {env_path}")
     module = _load_module_from_path(env_path)
     if module:
-        logger.info(f"Loaded BlueSPY API from BLUESPY_API_PATH: {env_path}")
+        logger.info(f"Loaded blueSPY API from BLUESPY_API_PATH: {env_path}")
     return module
 
 
@@ -83,7 +83,7 @@ def _try_platform_paths() -> ModuleType | None:
         logger.debug(f"Trying platform path: {search_path}")
         module = _load_module_from_path(search_path)
         if module:
-            logger.info(f"Loaded BlueSPY API from platform path: {search_path}")
+            logger.info(f"Loaded blueSPY API from platform path: {search_path}")
             return module
     return None
 
@@ -92,7 +92,7 @@ def _try_direct_import() -> ModuleType | None:
     """Try importing bluespy directly (already on PYTHONPATH)."""
     try:
         import bluespy
-        logger.info("Loaded BlueSPY API from PYTHONPATH")
+        logger.info("Loaded blueSPY API from PYTHONPATH")
         return bluespy
     except (ImportError, FileNotFoundError, OSError):
         return None
@@ -105,17 +105,17 @@ def _try_vendor() -> ModuleType | None:
     module = _load_module_from_path(vendor_dir)
     if module:
         logger.warning(
-            "Loaded BlueSPY API from bundled fallback. "
-            "This may be outdated — install the BlueSPY application for the latest API."
+            "Loaded blueSPY API from bundled fallback. "
+            "This may be outdated — install the blueSPY application for the latest API."
         )
     return module
 
 
 def discover_bluespy() -> ModuleType | None:
-    """Discover and load the BlueSPY Python API.
+    """Discover and load the blueSPY Python API.
 
     Tries multiple sources in priority order. Returns the loaded module
-    or None if BlueSPY is not available.
+    or None if blueSPY is not available.
 
     The result is cached — subsequent calls return the same module.
     """
@@ -133,21 +133,21 @@ def discover_bluespy() -> ModuleType | None:
             return module
 
     logger.warning(
-        "BlueSPY API not found. Install the BlueSPY application from rfcreations.com "
+        "blueSPY API not found. Install the blueSPY application from rfcreations.com "
         "or set BLUESPY_API_PATH to the directory containing bluespy.py"
     )
     return None
 
 
 def get_bluespy() -> ModuleType:
-    """Get the BlueSPY module, raising ImportError if unavailable.
+    """Get the blueSPY module, raising ImportError if unavailable.
 
-    Use this in code that requires BlueSPY to function.
+    Use this in code that requires blueSPY to function.
     """
     module = discover_bluespy()
     if module is None:
         raise ImportError(
-            "BlueSPY library not available. Install the BlueSPY application "
+            "blueSPY library not available. Install the blueSPY application "
             "from rfcreations.com and ensure BLUESPY_LIBRARY_PATH is set to "
             "the libblueSPY dylib/so/dll path."
         )

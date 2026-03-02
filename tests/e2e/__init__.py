@@ -1,1 +1,1 @@
-"""End-to-end tests for the BlueSPY MCP server."""
+"""End-to-end tests for the blueSPY MCP server."""

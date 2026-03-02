@@ -1,4 +1,4 @@
-"""Hardware worker subprocess for BlueSPY MCP.
+"""Hardware worker subprocess for blueSPY MCP.
 
 Runs in a child process so that ctypes calls to libblueSPY cannot hang
 the MCP server. Receives commands via multiprocessing.Queue and sends
@@ -333,7 +333,7 @@ def worker_loop(cmd_queue, result_queue, mode="hardware"):
             # leaving the module loaded but hardware operations broken.
             bluespy.connected_morephs()
     except Exception as e:
-        result_queue.put({"ok": False, "error": f"Failed to load BlueSPY: {e}"})
+        result_queue.put({"ok": False, "error": f"Failed to load blueSPY: {e}"})
         if multiprocessing.current_process().name != "MainProcess":
             os._exit(1)
         return

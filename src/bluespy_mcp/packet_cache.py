@@ -2,7 +2,7 @@
 
 Extracts packet metadata once into parallel Python lists, then wraps
 them in CachedPacket/CachedPackets classes that satisfy the same
-duck-type interface as real BlueSPY packets. Analysis functions in
+duck-type interface as real blueSPY packets. Analysis functions in
 analysis_core.py work unchanged.
 
 One-time cost on load/capture, near-instant analysis tool calls after.
@@ -32,7 +32,7 @@ class PacketCache:
 class CachedPacket:
     """Single-packet view into the cache by index.
 
-    Provides the same duck-type interface as BlueSPY event_id objects:
+    Provides the same duck-type interface as blueSPY event_id objects:
     .summary, .time, .rssi, .channel properties and .query()/.query_str().
     """
 

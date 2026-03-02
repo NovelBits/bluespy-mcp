@@ -198,7 +198,7 @@ class ScenarioResult:
 
 
 class Scenario:
-    """Configures and runs an E2E scenario against the BlueSPY MCP server.
+    """Configures and runs an E2E scenario against the blueSPY MCP server.
 
     Parameters
     ----------

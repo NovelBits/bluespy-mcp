@@ -56,7 +56,7 @@ async def test_no_hardware_graceful_failure(cost_tracker, mcp_server_config):
     Run explicitly: pytest -m "e2e and no_hardware"
     """
     scenario = Scenario(
-        prompt="Connect to the BlueSPY sniffer.",
+        prompt="Connect to the blueSPY sniffer.",
         expect_tools_subset=["mcp__bluespy__connect_hardware"],
         max_budget=0.35,
         model="haiku",

@@ -1,4 +1,4 @@
-"""Capture analysis functions using the BlueSPY query API.
+"""Capture analysis functions using the blueSPY query API.
 
 All functions operate on a CaptureManager that has a file loaded.
 Results are plain dicts/lists for easy JSON serialization.

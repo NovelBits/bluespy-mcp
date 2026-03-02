@@ -1,4 +1,4 @@
-"""Integration tests using real BlueSPY library and capture files.
+"""Integration tests using real blueSPY library and capture files.
 
 Run with: pytest -m hardware -v
 Requires: BLUESPY_LIBRARY_PATH pointing to libblueSPY dylib/so/dll
@@ -33,7 +33,7 @@ except Exception:
     pass
 
 if not _bluespy_available:
-    pytestmark = [pytest.mark.hardware, pytest.mark.skip(reason="BlueSPY library not available")]
+    pytestmark = [pytest.mark.hardware, pytest.mark.skip(reason="blueSPY library not available")]
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +47,7 @@ def _reset_loader_cache():
 
 
 class TestRealCaptureLoading:
-    """Test loading real .pcapng files with the actual BlueSPY library."""
+    """Test loading real .pcapng files with the actual blueSPY library."""
 
     def test_load_5sec_capture(self):
         from bluespy_mcp.capture import CaptureManager
@@ -248,7 +248,7 @@ class TestRealServer:
 
 
 class TestHardwareIntegration:
-    """Integration tests requiring BlueSPY hardware.
+    """Integration tests requiring blueSPY hardware.
 
     Run with: pytest tests/ -v -m hardware
 

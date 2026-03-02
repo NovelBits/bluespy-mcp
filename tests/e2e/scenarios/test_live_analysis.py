@@ -1,6 +1,6 @@
 """E2E scenarios for live capture-to-analysis transition workflows.
 
-These tests require a physical BlueSPY sniffer connected to the host machine.
+These tests require a physical blueSPY sniffer connected to the host machine.
 They validate the workflow of capturing live data and then transitioning to
 post-capture analysis of the recorded data.
 """

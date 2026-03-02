@@ -1,7 +1,7 @@
 """E2E scenarios for hardware-based capture workflows.
 
-These tests require a physical BlueSPY sniffer connected to the host machine.
-Each test sends a natural language prompt to Claude with the BlueSPY MCP server
+These tests require a physical blueSPY sniffer connected to the host machine.
+Each test sends a natural language prompt to Claude with the blueSPY MCP server
 configured, then validates that the correct tools are called in the expected order.
 """
 

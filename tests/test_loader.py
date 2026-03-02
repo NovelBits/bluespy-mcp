@@ -1,4 +1,4 @@
-"""Tests for BlueSPY API auto-discovery and loading."""
+"""Tests for blueSPY API auto-discovery and loading."""
 
 import importlib
 import sys

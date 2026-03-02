@@ -77,7 +77,7 @@ class HardwareError(RuntimeError):
 
 
 class HardwareManager:
-    """Manages BlueSPY hardware via a worker subprocess.
+    """Manages blueSPY hardware via a worker subprocess.
 
     State machine:
         IDLE <-> CONNECTED <-> CAPTURING
@@ -176,7 +176,7 @@ class HardwareManager:
 
         raise HardwareError(
             f"Worker failed to start after {retries} attempts: {last_error}. "
-            "If the BlueSPY desktop app is open, close it first. "
+            "If the blueSPY desktop app is open, close it first. "
             "Otherwise, try unplugging and replugging the USB cable."
         )
 
@@ -221,7 +221,7 @@ class HardwareManager:
             self._release_lock()
             raise HardwareError(
                 f"Hardware operation '{cmd['cmd']}' timed out after {timeout}s. "
-                "If the device LED is green, close the BlueSPY desktop app "
+                "If the device LED is green, close the blueSPY desktop app "
                 "or unplug/replug the USB cable."
             )
 
@@ -231,7 +231,7 @@ class HardwareManager:
         Args:
             serial: Moreph serial number. Use -1 for first available device.
             force: If True, remove stale lock file from a crashed session
-                   before connecting. Does not help if the BlueSPY desktop
+                   before connecting. Does not help if the blueSPY desktop
                    app is actively using the device.
         """
         if self._state != HardwareState.IDLE:
@@ -279,7 +279,7 @@ class HardwareManager:
         self._state = HardwareState.IDLE
         raise HardwareError(
             f"Failed to connect after {retries} attempts: {last_error}. "
-            "If the device LED is green, close the BlueSPY desktop app "
+            "If the device LED is green, close the blueSPY desktop app "
             "or unplug/replug the USB cable."
         )
 

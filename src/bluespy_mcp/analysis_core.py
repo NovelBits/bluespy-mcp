@@ -1,6 +1,6 @@
 """Shared packet analysis functions — no CaptureManager dependency.
 
-These functions operate on raw BlueSPY objects (event_id, device_id,
+These functions operate on raw blueSPY objects (event_id, device_id,
 connection_id) that support attribute access (.summary, .channel, .rssi,
 .time) and .query()/.query_str() methods.
 
@@ -299,10 +299,10 @@ def find_error_packets(packets, *, max_results: int = 100, start: int = 0) -> li
 
 
 def extract_device_info(devices) -> list[dict]:
-    """Extract device information from BlueSPY device objects.
+    """Extract device information from blueSPY device objects.
 
     Args:
-        devices: Iterable of BlueSPY device_id objects.
+        devices: Iterable of blueSPY device_id objects.
 
     Returns:
         List of dicts with index, address, name, connection_count.
@@ -400,8 +400,8 @@ def analyze_connection_live(connections, packets, connection_index: int = 0) -> 
     non-advertising packets globally.
 
     Args:
-        connections: BlueSPY connection objects (from bluespy.connections).
-        packets: BlueSPY packet objects (from bluespy.packets).
+        connections: blueSPY connection objects (from bluespy.connections).
+        packets: blueSPY packet objects (from bluespy.packets).
         connection_index: 0-based index into connections list.
 
     Returns:
@@ -532,8 +532,8 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
     """Analyze advertising data for a device during live capture.
 
     Args:
-        devices: BlueSPY device objects (from bluespy.devices).
-        packets: BlueSPY packet objects (from bluespy.packets).
+        devices: blueSPY device objects (from bluespy.devices).
+        packets: blueSPY packet objects (from bluespy.packets).
         device_index: 0-based index into devices list.
 
     Returns:
@@ -700,10 +700,10 @@ def analyze_all_advertising(devices, packets) -> dict:
 
 
 def extract_connection_info(connections) -> list[dict]:
-    """Extract connection information from BlueSPY connection objects.
+    """Extract connection information from blueSPY connection objects.
 
     Args:
-        connections: Iterable of BlueSPY connection_id objects.
+        connections: Iterable of blueSPY connection_id objects.
 
     Returns:
         List of dicts with index, summary, interval, latency, timeout.

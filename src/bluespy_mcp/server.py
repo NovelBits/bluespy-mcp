@@ -1,4 +1,4 @@
-"""FastMCP server exposing BlueSPY capture analysis tools.
+"""FastMCP server exposing blueSPY capture analysis tools.
 
 Run with:
     bluespy-mcp
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(
     "blueSPY MCP Server",
     instructions=(
-        "Bluetooth LE protocol capture analysis tools powered by the BlueSPY sniffer. "
-        "Requires the BlueSPY application to be installed.\n\n"
+        "Bluetooth LE protocol capture analysis tools powered by the blueSPY sniffer. "
+        "Requires the blueSPY application to be installed.\n\n"
         "## Two Modes\n"
         "1. **File analysis** — load a .pcapng file with load_capture(), then analyze it.\n"
         "2. **Live hardware capture** — connect_hardware() → start_capture() → "
@@ -148,7 +148,7 @@ def quick_capture(duration_seconds: str = "10") -> str:
     return (
         f"Please capture Bluetooth LE traffic for {duration_seconds} seconds.\n\n"
         "Follow these steps:\n"
-        "1. Use connect_hardware() to connect to the BlueSPY sniffer\n"
+        "1. Use connect_hardware() to connect to the blueSPY sniffer\n"
         f"2. Use start_capture(duration_seconds={duration_seconds}) to capture\n"
         "3. Report what was captured: file path, packet count, duration\n"
         "4. Ask if I'd like to analyze the capture or disconnect"
@@ -201,7 +201,7 @@ def capture_and_analyze(duration_seconds: str = "30") -> str:
         "IMPORTANT: Do NOT pass duration_seconds to start_capture(). Start an "
         "open-ended capture so analysis tools work during the capture.\n\n"
         "Follow these steps:\n"
-        "1. Use connect_hardware() to connect to the BlueSPY sniffer\n"
+        "1. Use connect_hardware() to connect to the blueSPY sniffer\n"
         "2. Use start_capture() — no duration_seconds, so it runs in the background\n"
         "3. While the capture is running, analyze the live data:\n"
         "   a. capture_summary() — see how many packets are arriving\n"
@@ -277,7 +277,7 @@ def list_captures(directory: str | None = None) -> str:
 
 @mcp.tool
 def connect_hardware(serial: int = -1, force: bool = False) -> str:
-    """Connect to BlueSPY Moreph hardware for live capture.
+    """Connect to blueSPY Moreph hardware for live capture.
 
     Reboots the device first to ensure clean state, then connects.
     Only one MCP client can use the hardware at a time.
@@ -302,7 +302,7 @@ def connect_hardware(serial: int = -1, force: bool = False) -> str:
 
 @mcp.tool
 def disconnect_hardware() -> str:
-    """Disconnect from BlueSPY hardware.
+    """Disconnect from blueSPY hardware.
 
     If a capture is in progress, it will be stopped first.
     """
@@ -552,7 +552,7 @@ def find_capture_errors(max_results: int = 100) -> str:
 
 
 def main():
-    """Run the BlueSPY MCP server."""
+    """Run the blueSPY MCP server."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",

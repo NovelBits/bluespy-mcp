@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bluespy-mcp"
 version = "1.2.1"
-description = "MCP server for BlueSPY Bluetooth LE protocol analyzer"
+description = "MCP server for blueSPY Bluetooth LE protocol analyzer"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -47,7 +47,7 @@ testpaths = ["tests"]
 addopts = "-m 'not e2e'"
 asyncio_mode = "auto"
 markers = [
-    "hardware: tests requiring BlueSPY hardware and dylib (deselect with '-m \"not hardware\"')",
+    "hardware: tests requiring blueSPY hardware and dylib (deselect with '-m \"not hardware\"')",
     "e2e: end-to-end tests using Claude agent SDK (deselect with '-m \"not e2e\"')",
     "file_only: e2e tests that only need capture files, no hardware",
     "no_hardware: tests that require NO hardware connected (negative path)",

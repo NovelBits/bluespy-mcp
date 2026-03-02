@@ -1,6 +1,6 @@
 """E2E scenarios for file-based capture analysis workflows.
 
-Each test sends a natural language prompt to Claude with the BlueSPY MCP server
+Each test sends a natural language prompt to Claude with the blueSPY MCP server
 configured, then validates that the correct tools are called in the expected order.
 """
 

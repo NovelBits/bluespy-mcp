@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/test.sh              # Unit tests (no hardware, no e2e)
 #   ./scripts/test.sh e2e-file     # E2E tests that only need capture files
-#   ./scripts/test.sh e2e-hw       # E2E tests requiring BlueSPY hardware
+#   ./scripts/test.sh e2e-hw       # E2E tests requiring blueSPY hardware
 #   ./scripts/test.sh e2e          # All E2E tests (file + hardware)
 #   ./scripts/test.sh all          # Everything (unit + all e2e)
 #
