@@ -46,7 +46,20 @@ No scripts. No manual filtering. Just a conversation.
 ## Prerequisites
 
 - **Python 3.10+**
-- **BlueSPY application** installed from [rfcreations.com](https://rfcreations.com) (provides the native `libblueSPY` library)
+- **BlueSPY application** (free) — provides the native `libblueSPY` library required for packet parsing
+
+Download BlueSPY for your platform from [rfcreations.com/bluespy-software](https://www.rfcreations.com/bluespy-software):
+
+| Platform | Download |
+|----------|----------|
+| macOS 11.0+ | [blueSPY-Darwin.pkg](https://private.rfcreations.com/bin/latest?q=blueSPY-~-Darwin.pkg) |
+| Windows 7+ | [blueSPY-win64.msi](https://private.rfcreations.com/bin/latest?q=blueSPY-~-win64.msi) |
+| Windows 7+ (Portable) | [blueSPY-win64.7z](https://private.rfcreations.com/bin/latest?q=blueSPY-~-win64.7z) |
+| Linux (glibc 2.27+) | [blueSPY-Linux.7z](https://private.rfcreations.com/bin/latest?q=blueSPY-~-Linux.7z) |
+| Linux (arm64) | [blueSPY-Linux-arm64.7z](https://private.rfcreations.com/bin/latest?q=blueSPY-~-Linux-arm64.7z) |
+| Linux (Headless) | [blueSPY-Linux-Headless.7z](https://private.rfcreations.com/bin/latest?q=blueSPY-~-Linux-Headless.7z) |
+
+No hardware needed to get started — download the [example captures](https://www.rfcreations.com/bluespy-software) from the same page and use them with the file analysis tools.
 
 ## Installation
 
