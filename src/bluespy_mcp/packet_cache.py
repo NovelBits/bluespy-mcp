@@ -26,6 +26,7 @@ class PacketCache:
     payloads: list[bytes | None] = field(default_factory=list)
     classified: list[str] = field(default_factory=list)
     error_indices: list[int] = field(default_factory=list)
+    type_index: dict[str, list[int]] = field(default_factory=dict)
 
 
 class CachedPacket:
@@ -160,7 +161,11 @@ def build_cache(packets) -> PacketCache:
         if any(kw in s_upper for kw in ERROR_KEYWORDS):
             error_indices.append(i)
 
-    return PacketCache(summaries, times, rssis, channels, payloads, classified, error_indices)
+    type_index: dict[str, list[int]] = {}
+    for i, pkt_type in enumerate(classified):
+        type_index.setdefault(pkt_type, []).append(i)
+
+    return PacketCache(summaries, times, rssis, channels, payloads, classified, error_indices, type_index)
 
 
 def extend_cache(cache: PacketCache, packets, from_index: int) -> None:
@@ -200,7 +205,9 @@ def extend_cache(cache: PacketCache, packets, from_index: int) -> None:
         except Exception:
             cache.payloads.append(None)
 
-        cache.classified.append(classify_packet(s))
+        pkt_type = classify_packet(s)
+        cache.classified.append(pkt_type)
+        cache.type_index.setdefault(pkt_type, []).append(i)
 
         s_upper = s.upper()
         if any(kw in s_upper for kw in ERROR_KEYWORDS):

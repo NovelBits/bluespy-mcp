@@ -360,3 +360,56 @@ class TestErrorIndicesPrecomputed:
         ])
         extend_cache(cache, more, 1)
         assert 1 in cache.error_indices
+
+
+class TestTypeIndex:
+    """Verify type_index is built and maintained correctly."""
+
+    def test_type_index_populated(self):
+        cache = build_cache(_sample_packets())
+        assert "ADV_IND" in cache.type_index
+        assert len(cache.type_index["ADV_IND"]) == 2
+        assert "SCAN_REQ" in cache.type_index
+        assert len(cache.type_index["SCAN_REQ"]) == 1
+        assert "ATT" in cache.type_index
+        assert len(cache.type_index["ATT"]) == 1
+
+    def test_type_index_empty(self):
+        cache = build_cache(MockPackets([]))
+        assert cache.type_index == {}
+
+    def test_type_index_after_extend(self):
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37),
+        ])
+        cache = build_cache(packets)
+        assert len(cache.type_index["ADV_IND"]) == 1
+
+        more = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ATT Read Request", time=2000, rssi=-50, channel=5),
+        ])
+        extend_cache(cache, more, 1)
+        assert len(cache.type_index["ADV_IND"]) == 1  # not re-indexed
+        assert len(cache.type_index["ATT"]) == 1
+        assert cache.type_index["ATT"] == [1]
+
+    def test_filter_uses_type_index(self):
+        """Type index fast path should return same results as full scan."""
+        raw = _sample_packets()
+        cached = CachedPackets(build_cache(raw))
+
+        raw_result = filter_packets(raw, packet_type="ADV_IND")
+        cached_result = filter_packets(cached, packet_type="ADV_IND")
+
+        assert raw_result == cached_result
+
+    def test_filter_type_and_channel_uses_index(self):
+        """Type index fast path with additional channel filter."""
+        raw = _sample_packets()
+        cached = CachedPackets(build_cache(raw))
+
+        raw_result = filter_packets(raw, packet_type="ADV_IND", channel=37)
+        cached_result = filter_packets(cached, packet_type="ADV_IND", channel=37)
+
+        assert raw_result == cached_result

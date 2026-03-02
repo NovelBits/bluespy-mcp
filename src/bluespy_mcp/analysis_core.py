@@ -174,6 +174,38 @@ def filter_packets(
     search_term = summary_contains.upper() if summary_contains else None
     total = len(packets)
 
+    # Fast path: use precomputed type index from cache
+    cache = getattr(packets, "_cache", None)
+    if cache is not None and hasattr(cache, "type_index") and packet_type and not summary_contains:
+        target_type = packet_type.upper()
+        indices = cache.type_index.get(target_type, [])
+        for i in indices:
+            if i < start:
+                continue
+            if len(results) >= max_results:
+                break
+            pkt = packets[i]
+            if channel is not None:
+                try:
+                    if pkt.channel != channel:
+                        continue
+                except (AttributeError, Exception):
+                    continue
+            pkt_dict: dict[str, Any] = {"index": i, "summary": pkt.summary}
+            for attr in ["time", "rssi", "channel"]:
+                try:
+                    pkt_dict[attr] = getattr(pkt, attr)
+                except (AttributeError, Exception):
+                    pass
+            try:
+                payload = pkt.query("payload")
+                if isinstance(payload, bytes) and payload:
+                    pkt_dict["payload_hex"] = payload.hex()
+            except (AttributeError, Exception):
+                pass
+            results.append(pkt_dict)
+        return results
+
     for i in range(start, total):
         if len(results) >= max_results:
             break
