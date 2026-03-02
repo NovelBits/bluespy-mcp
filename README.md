@@ -223,6 +223,22 @@ This MCP server works with any LLM that supports tool use. The built-in prompt t
 - **Tool-use reliability matters more than model size.** A mid-tier model that follows tool sequences correctly will outperform a large model that skips steps.
 - **Domain knowledge helps but isn't required.** The server returns structured JSON with classified packet types, so the model doesn't need to know Bluetooth LE internals to report useful findings.
 
+## Development
+
+```bash
+git clone https://github.com/novelbits/bluespy-mcp.git
+cd bluespy-mcp
+pip install -e .
+pytest
+```
+
+To run the full test suite including end-to-end and hardware tests (requires a BlueSPY sniffer connected via USB):
+
+```bash
+pip install -e ".[e2e]"
+bash scripts/test.sh all
+```
+
 ## Troubleshooting
 
 ### "BlueSPY library not found"
