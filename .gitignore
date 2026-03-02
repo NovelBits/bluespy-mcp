@@ -9,5 +9,6 @@ build/
 !tests/fixtures/*.pcapng
 .DS_Store
 .claude/
+CLAUDE.md
 .mcp.json
 captures/
