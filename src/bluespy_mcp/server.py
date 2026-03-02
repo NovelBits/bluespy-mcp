@@ -512,6 +512,26 @@ def inspect_all_devices() -> str:
 
 
 @mcp.tool
+def inspect_all_connections() -> str:
+    """Analyze ALL connections in a single pass.
+
+    Much faster than calling inspect_connection() for each connection.
+    Returns packet type counts attributed to each connection using
+    address matching and temporal boundaries. Use this when you need
+    to analyze multiple connections — then use inspect_connection(index)
+    only for deep dives on specific connections of interest.
+    """
+    if not _data_available():
+        return _not_ready()
+    try:
+        if _hardware.state == HardwareState.CAPTURING:
+            return _json(_hardware.inspect_all_connections())
+        return _json(_capture.inspect_all_connections())
+    except Exception as e:
+        return _error(str(e))
+
+
+@mcp.tool
 def find_capture_errors(max_results: int = 100) -> str:
     """Find all error, failure, and disconnect packets in the loaded capture.
 

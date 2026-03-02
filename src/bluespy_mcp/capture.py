@@ -40,6 +40,7 @@ _TIMEOUTS = {
     "inspect_connection": 15,
     "inspect_advertising": 15,
     "inspect_all_devices": 30,
+    "inspect_all_connections": 30,
 }
 
 
@@ -265,6 +266,14 @@ class CaptureManager:
         """Inspect advertising data for all devices in a single pass."""
         self._require_loaded()
         result = self._send_command({"cmd": "inspect_all_devices"})
+        if not result["ok"]:
+            raise RuntimeError(result["error"])
+        return result["data"]
+
+    def inspect_all_connections(self) -> dict:
+        """Inspect all connections in a single pass."""
+        self._require_loaded()
+        result = self._send_command({"cmd": "inspect_all_connections"})
         if not result["ok"]:
             raise RuntimeError(result["error"])
         return result["data"]

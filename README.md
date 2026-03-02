@@ -157,6 +157,7 @@ Add to your MCP server configuration:
 | `inspect_connection(connection_index)` | Deep-dive connection analysis with packet breakdown |
 | `inspect_advertising(device_index)` | Per-device advertising analysis with RSSI and channel stats |
 | `inspect_all_devices()` | Batch advertising analysis for ALL devices in a single pass (much faster than per-device calls) |
+| `inspect_all_connections()` | Batch connection analysis for ALL connections in a single pass (much faster than per-connection calls) |
 | `find_capture_errors(max_results?)` | Error, failure, disconnect, and timeout packets |
 
 ### Live Hardware

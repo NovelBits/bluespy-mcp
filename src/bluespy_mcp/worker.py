@@ -62,6 +62,7 @@ from bluespy_mcp.analysis_core import (
     extract_device_info,
     extract_connection_info,
     analyze_connection_live,
+    analyze_all_connections,
     analyze_advertising_live,
     analyze_all_advertising,
 )
@@ -285,6 +286,15 @@ def handle_command(
             packets_view = CachedPackets(cache)
             result = analyze_all_advertising(
                 bluespy.devices,
+                packets_view,
+            )
+            return {"ok": True, "data": result}, cache
+
+        elif action == "inspect_all_connections":
+            cache = _ensure_cache(bluespy, cache)
+            packets_view = CachedPackets(cache)
+            result = analyze_all_connections(
+                bluespy.connections,
                 packets_view,
             )
             return {"ok": True, "data": result}, cache

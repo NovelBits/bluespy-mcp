@@ -467,6 +467,67 @@ def analyze_connection_live(connections, packets, connection_index: int = 0) -> 
     return result
 
 
+def analyze_all_connections(connections, packets) -> dict:
+    """Analyze ALL connections in a single packet pass.
+
+    Instead of calling analyze_connection_live() N times (each iterating
+    all packets), this iterates packets once and buckets by connection
+    using address matching and temporal boundaries.
+    """
+    conn_list = extract_connection_info(connections)
+    if not conn_list:
+        return {"connections": [], "total_connections": 0}
+
+    # For each connection, find addresses and prepare boundary tracking
+    conn_bounds: list[dict] = []
+    for conn_info in conn_list:
+        addrs = _parse_connection_addresses(conn_info.get("summary", ""))
+        conn_bounds.append({"addrs": addrs, "start": None, "end": None})
+
+    # First pass: find CONNECT_IND / LL_TERMINATE boundaries for each
+    total = len(packets)
+    for i in range(total):
+        try:
+            s = packets[i].summary.upper()
+            t = packets[i].time
+            if "CONNECT_IND" in s:
+                for cb in conn_bounds:
+                    if cb["start"] is None and cb["addrs"] and any(a in s for a in cb["addrs"]):
+                        cb["start"] = t
+                        break
+            if "LL_TERMINATE" in s:
+                for cb in conn_bounds:
+                    if cb["start"] is not None and cb["end"] is None and t > cb["start"]:
+                        cb["end"] = t
+                        break
+        except (AttributeError, Exception):
+            continue
+
+    # Second pass: bucket non-ADV packets by connection
+    per_conn_counts: list[dict[str, int]] = [dict() for _ in conn_list]
+    for i in range(total):
+        try:
+            pkt = packets[i]
+            pkt_type = getattr(pkt, "classified", None) or classify_packet(pkt.summary)
+            if pkt_type in _ADV_TYPES:
+                continue
+            pkt_time = pkt.time
+            for idx, cb in enumerate(conn_bounds):
+                if cb["start"] is not None:
+                    if pkt_time >= cb["start"] and (cb["end"] is None or pkt_time <= cb["end"]):
+                        per_conn_counts[idx][pkt_type] = per_conn_counts[idx].get(pkt_type, 0) + 1
+                        break
+        except (AttributeError, Exception):
+            continue
+
+    results = []
+    for idx, conn_info in enumerate(conn_list):
+        conn_info["packet_type_counts"] = per_conn_counts[idx]
+        results.append(conn_info)
+
+    return {"connections": results, "total_connections": len(results)}
+
+
 def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
     """Analyze advertising data for a device during live capture.
 

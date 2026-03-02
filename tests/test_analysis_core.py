@@ -12,6 +12,7 @@ from bluespy_mcp.analysis_core import (
     extract_device_info,
     extract_connection_info,
     analyze_connection_live,
+    analyze_all_connections,
     analyze_advertising_live,
     analyze_all_advertising,
     ERROR_KEYWORDS,
@@ -368,6 +369,48 @@ class TestConnectionAccuracy:
         assert "ADV_IND" not in counts
         assert counts.get("CONNECT_IND", 0) == 1
         assert counts.get("ATT", 0) == 1
+
+
+class TestAnalyzeAllConnections:
+    def _make_multi_conn_data(self):
+        conn1 = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        conn2 = MockConnection(
+            _summary="0xDEF0 Central CC:DD:EE:FF:00:11 Peripheral 22:33:44:55:66:77"
+        )
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="LL_TERMINATE_IND Reason: Remote", time=5000, rssi=-55, channel=5),
+            MockPacket(summary="CONNECT_IND to CC:DD:EE:FF:00:11", time=6000, rssi=-52, channel=39),
+            MockPacket(summary="SMP Pairing Request", time=7000, rssi=-53, channel=5),
+        ])
+        return [conn1, conn2], packets
+
+    def test_basic_returns_all_connections(self):
+        conns, pkts = self._make_multi_conn_data()
+        result = analyze_all_connections(conns, pkts)
+        assert result["total_connections"] == 2
+        assert len(result["connections"]) == 2
+
+    def test_empty_connections(self):
+        result = analyze_all_connections([], MockPackets([]))
+        assert result["total_connections"] == 0
+        assert result["connections"] == []
+
+    def test_matches_individual_counts(self):
+        """Batch counts should match calling analyze_connection_live per connection."""
+        conns, pkts = self._make_multi_conn_data()
+        batch = analyze_all_connections(conns, pkts)
+        for i, conn_result in enumerate(batch["connections"]):
+            individual = analyze_connection_live(conns, pkts, connection_index=i)
+            batch_counts = conn_result["packet_type_counts"]
+            indiv_counts = individual["packet_type_counts"]
+            assert batch_counts == indiv_counts, (
+                f"Connection {i}: batch={batch_counts}, individual={indiv_counts}"
+            )
 
 
 class TestAnalyzeAdvertisingLive:

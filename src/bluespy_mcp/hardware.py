@@ -62,6 +62,7 @@ _TIMEOUTS = {
     "inspect_connection": 15,
     "inspect_advertising": 15,
     "inspect_all_devices": 30,
+    "inspect_all_connections": 30,
 }
 
 
@@ -505,6 +506,18 @@ class HardwareManager:
         except HardwareError:
             pass
         return {"devices": [], "total_devices": 0}
+
+    def inspect_all_connections(self) -> dict:
+        """Inspect all connections in a single pass."""
+        if self._state != HardwareState.CAPTURING:
+            return {"connections": [], "total_connections": 0}
+        try:
+            result = self._send_command({"cmd": "inspect_all_connections"})
+            if result["ok"]:
+                return result["data"]
+        except HardwareError:
+            pass
+        return {"connections": [], "total_connections": 0}
 
     def get_status(self) -> dict:
         """Get current hardware status (local state, no subprocess call)."""

@@ -563,3 +563,24 @@ class TestLiveAnalysisCommands:
         assert result["ok"] is True
         assert result["data"]["total_devices"] == 0
         assert result["data"]["devices"] == []
+
+    def test_inspect_all_connections(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        result, _ = handle_command(mock, {"cmd": "inspect_all_connections"})
+        assert result["ok"] is True
+        data = result["data"]
+        assert data["total_connections"] == 1
+        assert len(data["connections"]) == 1
+        assert "packet_type_counts" in data["connections"][0]
+
+    def test_inspect_all_connections_empty(self):
+        from bluespy_mcp.worker import handle_command
+
+        mock = _make_mock_with_packets()
+        mock.connections = []
+        result, _ = handle_command(mock, {"cmd": "inspect_all_connections"})
+        assert result["ok"] is True
+        assert result["data"]["total_connections"] == 0
+        assert result["data"]["connections"] == []
