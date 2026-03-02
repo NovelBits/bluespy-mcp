@@ -381,8 +381,23 @@ _ADV_TYPES = frozenset({
 })
 
 
+_MAC_RE = re.compile(r"[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}")
+
+
+def _parse_connection_addresses(summary: str) -> list[str]:
+    """Extract MAC addresses from a connection summary string.
+
+    Returns uppercase addresses for case-insensitive matching.
+    """
+    return [m.upper() for m in _MAC_RE.findall(summary)]
+
+
 def analyze_connection_live(connections, packets, connection_index: int = 0) -> dict:
     """Analyze a connection during live capture.
+
+    Uses address matching and temporal boundaries (CONNECT_IND / LL_TERMINATE)
+    to attribute packets to the correct connection instead of counting all
+    non-advertising packets globally.
 
     Args:
         connections: BlueSPY connection objects (from bluespy.connections).
@@ -402,16 +417,49 @@ def analyze_connection_live(connections, packets, connection_index: int = 0) -> 
         }
 
     result = conn_list[connection_index]
+    conn_summary = result.get("summary", "")
+    conn_addrs = _parse_connection_addresses(conn_summary)
 
-    # Count non-advertising packets by type (heuristic for connection traffic)
-    conn_type_counts: dict[str, int] = {}
+    # Find time boundaries from CONNECT_IND / LL_TERMINATE
+    start_time: int | None = None
+    end_time: int | None = None
     total = len(packets)
     for i in range(total):
         try:
-            summary = packets[i].summary
-            pkt_type = classify_packet(summary)
-            if pkt_type not in _ADV_TYPES:
-                conn_type_counts[pkt_type] = conn_type_counts.get(pkt_type, 0) + 1
+            s = packets[i].summary.upper()
+            t = packets[i].time
+            if "CONNECT_IND" in s and conn_addrs and any(a in s for a in conn_addrs):
+                start_time = t
+            if start_time is not None and "LL_TERMINATE" in s and t > start_time:
+                end_time = t
+                break
+        except (AttributeError, Exception):
+            continue
+
+    # Count connection-specific packets
+    conn_type_counts: dict[str, int] = {}
+    for i in range(total):
+        try:
+            pkt = packets[i]
+            summary = pkt.summary
+            pkt_type = getattr(pkt, "classified", None) or classify_packet(summary)
+            if pkt_type in _ADV_TYPES:
+                continue
+
+            # When we have time boundaries, use temporal scoping
+            if start_time is not None:
+                pkt_time = pkt.time
+                if pkt_time < start_time:
+                    continue
+                if end_time is not None and pkt_time > end_time:
+                    continue
+            elif conn_addrs:
+                # Fallback: address matching when no CONNECT_IND found
+                s_upper = summary.upper()
+                if not any(a in s_upper for a in conn_addrs):
+                    continue
+
+            conn_type_counts[pkt_type] = conn_type_counts.get(pkt_type, 0) + 1
         except (AttributeError, Exception):
             continue
 

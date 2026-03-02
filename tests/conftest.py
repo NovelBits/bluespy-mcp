@@ -75,7 +75,7 @@ class MockConnection:
     Real API: query("interval"), query("latency"), query("timeout") all raise AttributeError.
     Only query("summary") works.
     """
-    _summary: str = "0xABCD1234 21:40:50.5-21:40:55.4: Central \u000f04e1 Peripheral, 0/0/141 Adv/Ctrl/Data packets"
+    _summary: str = "0xABCD1234 21:40:50.5-21:40:55.4: Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66, 0/0/141 Adv/Ctrl/Data packets"
 
     def query(self, name: str) -> Any:
         if name == "summary":

@@ -4,6 +4,7 @@ import pytest
 
 from bluespy_mcp.analysis_core import (
     _extract_adv_address,
+    _parse_connection_addresses,
     classify_packet,
     summarize_packets,
     filter_packets,
@@ -234,8 +235,8 @@ class TestAnalyzeConnectionLive:
     def _make_data(self):
         connections = [MockConnection()]
         packets = MockPackets([
-            MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37),
-            MockPacket(summary="CONNECT_IND to AA:BB", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
             MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
             MockPacket(summary="LE-U L2CAP Data", time=4000, rssi=-48, channel=5),
         ])
@@ -265,6 +266,108 @@ class TestAnalyzeConnectionLive:
         result = analyze_connection_live(conns, pkts, connection_index=5)
         assert "error" in result
         assert "out of range" in result["error"]
+
+
+class TestParseConnectionAddresses:
+    def test_extracts_macs_from_summary(self):
+        summary = "0xABCD1234 Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        addrs = _parse_connection_addresses(summary)
+        assert "AA:BB:CC:DD:EE:FF" in addrs
+        assert "11:22:33:44:55:66" in addrs
+
+    def test_extracts_lowercase_macs(self):
+        summary = "Central aa:bb:cc:dd:ee:ff"
+        addrs = _parse_connection_addresses(summary)
+        assert "AA:BB:CC:DD:EE:FF" in addrs
+
+    def test_empty_for_no_macs(self):
+        assert _parse_connection_addresses("0xABCD1234 no addresses here") == []
+
+
+class TestConnectionAccuracy:
+    def test_multi_connection_accuracy(self):
+        """Two connections with different time ranges should only count their own packets."""
+        conn1 = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        conn2 = MockConnection(
+            _summary="0xDEF0 Central CC:DD:EE:FF:00:11 Peripheral 22:33:44:55:66:77"
+        )
+        packets = MockPackets([
+            # Advertising
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            # Connection 1 boundary + data
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="LE-U L2CAP Data", time=4000, rssi=-48, channel=5),
+            MockPacket(summary="LL_TERMINATE_IND Reason: Remote", time=5000, rssi=-55, channel=5),
+            # Connection 2 boundary + data
+            MockPacket(summary="CONNECT_IND to CC:DD:EE:FF:00:11", time=6000, rssi=-52, channel=39),
+            MockPacket(summary="SMP Pairing Request", time=7000, rssi=-53, channel=5),
+            MockPacket(summary="ATT Write Request", time=8000, rssi=-50, channel=5),
+        ])
+        result1 = analyze_connection_live([conn1, conn2], packets, connection_index=0)
+        result2 = analyze_connection_live([conn1, conn2], packets, connection_index=1)
+
+        # Connection 1: CONNECT_IND + ATT + LE_DATA + LL_CONTROL (LL_TERMINATE)
+        counts1 = result1["packet_type_counts"]
+        assert counts1.get("CONNECT_IND", 0) == 1
+        assert counts1.get("ATT", 0) == 1
+        assert counts1.get("LE_DATA", 0) == 1
+        assert "SMP" not in counts1  # belongs to conn2
+
+        # Connection 2: CONNECT_IND + SMP + ATT
+        counts2 = result2["packet_type_counts"]
+        assert counts2.get("CONNECT_IND", 0) == 1
+        assert counts2.get("SMP", 0) == 1
+        assert counts2.get("ATT", 0) == 1
+        assert "LE_DATA" not in counts2  # belongs to conn1
+
+    def test_single_connection_backward_compatible(self):
+        """Single connection still works as before."""
+        connections = [MockConnection()]
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+        ])
+        result = analyze_connection_live(connections, packets, connection_index=0)
+        counts = result["packet_type_counts"]
+        assert "ADV_IND" not in counts
+        assert counts.get("CONNECT_IND", 0) == 1
+        assert counts.get("ATT", 0) == 1
+
+    def test_no_boundaries_fallback(self):
+        """When no CONNECT_IND found, falls back to address matching."""
+        conn = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="ATT Read Request to AA:BB:CC:DD:EE:FF", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="SMP Request to CC:DD:EE:FF:00:11", time=4000, rssi=-53, channel=5),
+        ])
+        result = analyze_connection_live([conn], packets, connection_index=0)
+        counts = result["packet_type_counts"]
+        assert counts.get("ATT", 0) == 1  # has matching address
+        assert "SMP" not in counts  # different address
+
+    def test_uses_cached_classified(self):
+        """Should use pkt.classified when available (CachedPackets)."""
+        from bluespy_mcp.packet_cache import CachedPackets, build_cache
+
+        connections = [MockConnection()]
+        raw = MockPackets([
+            MockPacket(summary="ADV_IND from AA:BB:CC:DD:EE:FF", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="CONNECT_IND to AA:BB:CC:DD:EE:FF", time=2000, rssi=-52, channel=39),
+            MockPacket(summary="ATT Read Request", time=3000, rssi=-50, channel=5),
+        ])
+        cached = CachedPackets(build_cache(raw))
+        result = analyze_connection_live(connections, cached, connection_index=0)
+        counts = result["packet_type_counts"]
+        assert "ADV_IND" not in counts
+        assert counts.get("CONNECT_IND", 0) == 1
+        assert counts.get("ATT", 0) == 1
 
 
 class TestAnalyzeAdvertisingLive:
