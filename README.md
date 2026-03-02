@@ -199,6 +199,61 @@ Add to your MCP server configuration:
 | `quick-capture` | Quick-start workflow for live hardware capture |
 | `debug-connection` | Troubleshoot hardware connection issues |
 
+## Try It Without Hardware
+
+Download the [example captures](https://www.rfcreations.com/bluespy-software) from RFcreations (free) and try these prompts. No sniffer needed — just the BlueSPY application installed.
+
+### Example Captures
+
+| File | Packets | Devices | Connections | What's inside |
+|------|---------|---------|-------------|---------------|
+| `LE_Phone_Alert_Status_Profile.pcapng` | 2,359 | 16 | 2 | Simple Bluetooth LE GATT profile with scanning and data exchange |
+| `Encrypted Advertising Data.pcapng` | 1,547 | 13 | 0 | Advertising only — no connections, good for device discovery analysis |
+| `AVDTP_and_eSCO.pcapng` | — | — | — | Bluetooth Classic audio (A2DP streaming + voice calls) |
+| `BIS.pcapng` | — | — | — | LE Audio Broadcast Isochronous Stream |
+| `CIS_and_AVDTP_and_HCI.pcapng` | — | — | — | Mixed: LE Audio CIS + Classic audio + HCI commands |
+| `audiopod_LE_Audio_CIG.pcapng` | 53,887 | 186 | 14 | Dense LE Audio capture — NRF5340 devices, CRC errors, encrypted traffic |
+
+### Start here: simple Bluetooth LE profile
+
+```
+Load LE_Phone_Alert_Status_Profile.pcapng and tell me what's going on.
+```
+
+```
+Inspect all connections. What protocols are being used?
+```
+
+### Advertising-only analysis
+
+```
+Load Encrypted Advertising Data.pcapng. How many devices are advertising? Inspect all of them.
+```
+
+```
+Search for SCAN_REQ packets. Which devices are being actively scanned?
+```
+
+### Stress test: large LE Audio capture
+
+```
+Load audiopod_LE_Audio_CIG.pcapng and summarize it.
+```
+
+```
+Inspect all 14 connections at once. Which ones have the most data packets?
+```
+
+```
+Find all errors. What's causing the CRC failures?
+```
+
+```
+Look at connection 9 — that's the NRF5340_AUDIO device. What's it doing?
+```
+
+Or use the built-in `analyze-capture` prompt for a guided walkthrough of any file.
+
 ## Live Hardware Capture
 
 If you have a BlueSPY sniffer connected via USB, the MCP server can control it directly — connect, start/stop captures, and analyze results in real time.
