@@ -452,6 +452,7 @@ def analyze_connection_live(connections, packets, connection_index: int = 0) -> 
             continue
 
     # Count connection-specific packets
+    num_connections = len(conn_list)
     conn_type_counts: dict[str, int] = {}
     for i in range(total):
         try:
@@ -473,10 +474,25 @@ def analyze_connection_live(connections, packets, connection_index: int = 0) -> 
                 s_upper = summary.upper()
                 if not any(a in s_upper for a in conn_addrs):
                     continue
+            # else: no boundaries and no addresses — count all non-ADV
+            # (only accurate for single-connection captures)
 
             conn_type_counts[pkt_type] = conn_type_counts.get(pkt_type, 0) + 1
         except (AttributeError, Exception):
             continue
+
+    # If filtering yielded nothing but packets exist, and this is the only
+    # connection, fall back to counting all non-ADV packets. This handles
+    # live captures that started mid-connection (no CONNECT_IND in capture).
+    if not conn_type_counts and num_connections == 1 and start_time is None:
+        for i in range(total):
+            try:
+                pkt = packets[i]
+                pkt_type = getattr(pkt, "classified", None) or classify_packet(pkt.summary)
+                if pkt_type not in _ADV_TYPES:
+                    conn_type_counts[pkt_type] = conn_type_counts.get(pkt_type, 0) + 1
+            except (AttributeError, Exception):
+                continue
 
     result["packet_type_counts"] = conn_type_counts
     return result
@@ -519,6 +535,7 @@ def analyze_all_connections(connections, packets) -> dict:
             continue
 
     # Second pass: bucket non-ADV packets by connection
+    has_any_boundaries = any(cb["start"] is not None for cb in conn_bounds)
     per_conn_counts: list[dict[str, int]] = [dict() for _ in conn_list]
     for i in range(total):
         try:
@@ -527,11 +544,17 @@ def analyze_all_connections(connections, packets) -> dict:
             if pkt_type in _ADV_TYPES:
                 continue
             pkt_time = pkt.time
+            matched = False
             for idx, cb in enumerate(conn_bounds):
                 if cb["start"] is not None:
                     if pkt_time >= cb["start"] and (cb["end"] is None or pkt_time <= cb["end"]):
                         per_conn_counts[idx][pkt_type] = per_conn_counts[idx].get(pkt_type, 0) + 1
+                        matched = True
                         break
+            # Single connection with no boundaries (mid-connection live capture):
+            # attribute all non-ADV packets to the only connection
+            if not matched and len(conn_list) == 1 and not has_any_boundaries:
+                per_conn_counts[0][pkt_type] = per_conn_counts[0].get(pkt_type, 0) + 1
         except (AttributeError, Exception):
             continue
 

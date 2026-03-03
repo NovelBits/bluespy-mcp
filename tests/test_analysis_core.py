@@ -384,6 +384,44 @@ class TestConnectionAccuracy:
         assert counts.get("ATT", 0) == 1  # has matching address
         assert "SMP" not in counts  # different address
 
+    def test_mid_connection_single_conn_fallback(self):
+        """When capture starts mid-connection (no CONNECT_IND), single connection
+        should still get all non-ADV packets attributed to it."""
+        conn = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        # No CONNECT_IND in capture — simulates joining mid-connection.
+        # Data packets don't contain addresses in summary, so address matching fails.
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from CC:DD:EE:FF:00:11", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="LE-U L2CAP Data ATT Read Request", time=2000, rssi=-50, channel=5),
+            MockPacket(summary="LE-U L2CAP Data ATT Read Response", time=3000, rssi=-50, channel=5),
+            MockPacket(summary="LE-U L2CAP Data", time=4000, rssi=-50, channel=5),
+        ])
+        result = analyze_connection_live([conn], packets, connection_index=0)
+        counts = result["packet_type_counts"]
+        # All non-ADV packets should be attributed via fallback
+        assert counts.get("ATT", 0) == 2
+        assert counts.get("L2CAP", 0) == 1
+        assert "ADV_IND" not in counts
+
+    def test_mid_connection_multi_conn_no_fallback(self):
+        """With multiple connections and no boundaries, fallback should NOT fire
+        (ambiguous which connection owns the packets)."""
+        conn1 = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        conn2 = MockConnection(
+            _summary="0xDEF0 Central CC:DD:EE:FF:00:11 Peripheral 22:33:44:55:66:77"
+        )
+        packets = MockPackets([
+            MockPacket(summary="LE-U L2CAP Data ATT Read Request", time=2000, rssi=-50, channel=5),
+        ])
+        result = analyze_connection_live([conn1, conn2], packets, connection_index=0)
+        counts = result["packet_type_counts"]
+        # Should be empty — no fallback for multi-connection
+        assert len(counts) == 0
+
     def test_uses_cached_classified(self):
         """Should use pkt.classified when available (CachedPackets)."""
         from bluespy_mcp.packet_cache import CachedPackets, build_cache
@@ -442,6 +480,38 @@ class TestAnalyzeAllConnections:
             assert batch_counts == indiv_counts, (
                 f"Connection {i}: batch={batch_counts}, individual={indiv_counts}"
             )
+
+    def test_mid_connection_single_conn_fallback(self):
+        """Single connection with no CONNECT_IND should get all non-ADV packets."""
+        conn = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        packets = MockPackets([
+            MockPacket(summary="ADV_IND from CC:DD:EE:FF:00:11", time=1000, rssi=-55, channel=37),
+            MockPacket(summary="LE-U L2CAP Data ATT Read Request", time=2000, rssi=-50, channel=5),
+            MockPacket(summary="LE-U L2CAP Data", time=3000, rssi=-50, channel=5),
+        ])
+        result = analyze_all_connections([conn], packets)
+        counts = result["connections"][0]["packet_type_counts"]
+        assert counts.get("ATT", 0) == 1
+        assert counts.get("L2CAP", 0) == 1
+        assert "ADV_IND" not in counts
+
+    def test_mid_connection_multi_conn_no_fallback(self):
+        """Multiple connections with no boundaries should NOT use fallback."""
+        conn1 = MockConnection(
+            _summary="0xABCD Central AA:BB:CC:DD:EE:FF Peripheral 11:22:33:44:55:66"
+        )
+        conn2 = MockConnection(
+            _summary="0xDEF0 Central CC:DD:EE:FF:00:11 Peripheral 22:33:44:55:66:77"
+        )
+        packets = MockPackets([
+            MockPacket(summary="LE-U L2CAP Data ATT Read Request", time=2000, rssi=-50, channel=5),
+        ])
+        result = analyze_all_connections([conn1, conn2], packets)
+        # With 2 connections and no boundaries, no fallback — counts stay empty
+        assert result["connections"][0]["packet_type_counts"] == {}
+        assert result["connections"][1]["packet_type_counts"] == {}
 
 
 class TestAnalyzeAdvertisingLive:
