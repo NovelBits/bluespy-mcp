@@ -26,7 +26,7 @@ class TestClassifyPacket:
         ("SCAN_REQ to AA:BB:CC:DD:EE:FF", "SCAN_REQ"),
         ("SCAN_RSP from AA:BB:CC:DD:EE:FF", "SCAN_RSP"),
         ("CONNECT_IND to AA:BB:CC:DD:EE:FF", "CONNECT_IND"),
-        ("LE-U L2CAP Data", "LE_DATA"),
+        ("LE-U L2CAP Data", "L2CAP"),
         ("ATT Read Request", "ATT"),
         ("SMP Pairing Request", "SMP"),
         ("LL_TERMINATE_IND", "LL_CONTROL"),

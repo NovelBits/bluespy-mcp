@@ -60,26 +60,27 @@ def classify_packet(summary: str) -> str:
     # Connection events
     if "CONNECT_IND" in s or "AUX_CONNECT_REQ" in s:
         return "CONNECT_IND"
-    if "LL_CONNECTION_UPDATE" in s:
-        return "LL_CONNECTION_UPDATE"
-    if "LL_TERMINATE" in s:
-        return "LL_CONTROL"
 
-    # LE data (check before L2CAP — "LE-U L2CAP Data" should be LE_DATA)
-    if "LE-U" in s:
-        return "LE_DATA"
-
-    # Higher-layer protocols
-    if "L2CAP" in s:
-        return "L2CAP"
+    # Higher-layer protocols (check before LE-U — summaries like
+    # "LE-U L2CAP Data ATT Read Request" should classify as ATT, not LE_DATA)
     if "ATT" in s or "GATT" in s:
         return "ATT"
     if "SMP" in s:
         return "SMP"
+    if "L2CAP" in s:
+        return "L2CAP"
 
-    # Link Layer control
+    # Link Layer control (specific before generic)
+    if "LL_CONNECTION_UPDATE" in s:
+        return "LL_CONNECTION_UPDATE"
+    if "LL_TERMINATE" in s:
+        return "LL_CONTROL"
     if "LL_" in s:
         return "LL_CONTROL"
+
+    # LE data — generic Link Layer data without upper-layer protocol info
+    if "LE-U" in s:
+        return "LE_DATA"
 
     # Error/status
     if "CRC" in s:
@@ -156,7 +157,7 @@ def filter_packets(
     channel: int | None = None,
     max_results: int = 100,
     start: int = 0,
-) -> list[dict]:
+) -> dict:
     """Filter packets by criteria.
 
     Args:
@@ -168,11 +169,27 @@ def filter_packets(
         start: Start index (skip earlier packets).
 
     Returns:
-        List of dicts with index, summary, time, rssi, channel.
+        Dict with packets list, has_more boolean, and returned count.
     """
     results: list[dict] = []
     search_term = summary_contains.upper() if summary_contains else None
     total = len(packets)
+    has_more = False
+
+    def _build_pkt_dict(pkt, i: int) -> dict[str, Any]:
+        pkt_dict: dict[str, Any] = {"index": i, "summary": pkt.summary}
+        for attr in ["time", "rssi", "channel"]:
+            try:
+                pkt_dict[attr] = getattr(pkt, attr)
+            except (AttributeError, Exception):
+                pass
+        try:
+            payload = pkt.query("payload")
+            if isinstance(payload, bytes) and payload:
+                pkt_dict["payload_hex"] = payload.hex()
+        except (AttributeError, Exception):
+            pass
+        return pkt_dict
 
     # Fast path: use precomputed type index from cache
     cache = getattr(packets, "_cache", None)
@@ -183,6 +200,7 @@ def filter_packets(
             if i < start:
                 continue
             if len(results) >= max_results:
+                has_more = True
                 break
             pkt = packets[i]
             if channel is not None:
@@ -191,23 +209,32 @@ def filter_packets(
                         continue
                 except (AttributeError, Exception):
                     continue
-            pkt_dict: dict[str, Any] = {"index": i, "summary": pkt.summary}
-            for attr in ["time", "rssi", "channel"]:
-                try:
-                    pkt_dict[attr] = getattr(pkt, attr)
-                except (AttributeError, Exception):
-                    pass
-            try:
-                payload = pkt.query("payload")
-                if isinstance(payload, bytes) and payload:
-                    pkt_dict["payload_hex"] = payload.hex()
-            except (AttributeError, Exception):
-                pass
-            results.append(pkt_dict)
-        return results
+            results.append(_build_pkt_dict(pkt, i))
+        return {"packets": results, "has_more": has_more, "returned": len(results)}
 
     for i in range(start, total):
         if len(results) >= max_results:
+            # Check if there's at least one more matching packet
+            for j in range(i, total):
+                pkt = packets[j]
+                try:
+                    summary = pkt.summary
+                except (AttributeError, Exception):
+                    continue
+                if search_term and search_term not in summary.upper():
+                    continue
+                if packet_type:
+                    pkt_class = getattr(pkt, "classified", None) or classify_packet(summary)
+                    if pkt_class.upper() != packet_type.upper():
+                        continue
+                if channel is not None:
+                    try:
+                        if pkt.channel != channel:
+                            continue
+                    except (AttributeError, Exception):
+                        continue
+                has_more = True
+                break
             break
         pkt = packets[i]
         try:
@@ -228,21 +255,9 @@ def filter_packets(
             except (AttributeError, Exception):
                 continue
 
-        pkt_dict: dict[str, Any] = {"index": i, "summary": summary}
-        for attr in ["time", "rssi", "channel"]:
-            try:
-                pkt_dict[attr] = getattr(pkt, attr)
-            except (AttributeError, Exception):
-                pass
-        try:
-            payload = pkt.query("payload")
-            if isinstance(payload, bytes) and payload:
-                pkt_dict["payload_hex"] = payload.hex()
-        except (AttributeError, Exception):
-            pass
-        results.append(pkt_dict)
+        results.append(_build_pkt_dict(pkt, i))
 
-    return results
+    return {"packets": results, "has_more": has_more, "returned": len(results)}
 
 
 def find_error_packets(packets, *, max_results: int = 100, start: int = 0) -> list[dict]:

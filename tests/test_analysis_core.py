@@ -27,9 +27,20 @@ class TestClassifyPacket:
     @pytest.mark.parametrize("summary,expected", [
         ("ADV_IND from AA:BB:CC:DD:EE:FF", "ADV_IND"),
         ("AUX_ADV_IND Extended", "AUX_ADV_IND"),
-        ("LE-U L2CAP Data", "LE_DATA"),
+        ("LE-U L2CAP Data", "L2CAP"),
         ("ATT Read Request", "ATT"),
         ("Something unknown", "OTHER"),
+        # LE-U wrapped higher-layer protocols — most specific wins
+        ("LE-U L2CAP Data ATT Read Request", "ATT"),
+        ("LE-U L2CAP Data ATT Write Command", "ATT"),
+        ("LE-U L2CAP Data ATT Handle Value Notification", "ATT"),
+        ("LE-U L2CAP Data GATT Service Discovery", "ATT"),
+        ("LE-U L2CAP Data SMP Pairing Request", "SMP"),
+        ("LE-U L2CAP Data SMP Security Request", "SMP"),
+        ("LE-U L2CAP Data L2CAP Connection Parameter Update Request", "L2CAP"),
+        # Pure LE-U without L2CAP/upper-layer protocol → LE_DATA
+        ("LE-U", "LE_DATA"),
+        ("LE-U Data", "LE_DATA"),
     ])
     def test_classification(self, summary, expected):
         assert classify_packet(summary) == expected
@@ -49,7 +60,7 @@ class TestSummarizePackets:
         assert result["packet_count"] == 4
         assert result["packet_type_counts"]["ADV_IND"] == 2
         assert result["packet_type_counts"]["SCAN_REQ"] == 1
-        assert result["packet_type_counts"]["LE_DATA"] == 1
+        assert result["packet_type_counts"]["L2CAP"] == 1
 
     def test_includes_duration(self):
         packets = MockPackets([
@@ -83,8 +94,8 @@ class TestFilterPackets:
             MockPacket(summary="ADV_IND", time=1100, rssi=-55, channel=38),
             MockPacket(summary="ADV_IND", time=1200, rssi=-55, channel=37),
         ])
-        results = filter_packets(packets, channel=37)
-        assert len(results) == 2
+        result = filter_packets(packets, channel=37)
+        assert result["returned"] == 2
 
     def test_filter_by_packet_type(self):
         packets = MockPackets([
@@ -92,34 +103,36 @@ class TestFilterPackets:
             MockPacket(summary="SCAN_REQ to AA:BB", time=1100, rssi=-60, channel=37),
             MockPacket(summary="ATT Read Request", time=2000, rssi=-50, channel=5),
         ])
-        results = filter_packets(packets, packet_type="ADV_IND")
-        assert len(results) == 1
-        assert results[0]["summary"] == "ADV_IND from AA:BB"
+        result = filter_packets(packets, packet_type="ADV_IND")
+        assert result["returned"] == 1
+        assert result["packets"][0]["summary"] == "ADV_IND from AA:BB"
 
     def test_filter_by_summary_contains(self):
         packets = MockPackets([
             MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37),
             MockPacket(summary="SCAN_REQ to CC:DD", time=1100, rssi=-60, channel=37),
         ])
-        results = filter_packets(packets, summary_contains="AA:BB")
-        assert len(results) == 1
+        result = filter_packets(packets, summary_contains="AA:BB")
+        assert result["returned"] == 1
 
     def test_max_results(self):
         packets = MockPackets([
             MockPacket(summary=f"ADV_IND #{i}", time=i * 1000, rssi=-55, channel=37)
             for i in range(50)
         ])
-        results = filter_packets(packets, max_results=5)
-        assert len(results) == 5
+        result = filter_packets(packets, max_results=5)
+        assert result["returned"] == 5
+        assert result["has_more"] is True
 
     def test_start_index(self):
         packets = MockPackets([
             MockPacket(summary=f"ADV_IND #{i}", time=i * 1000, rssi=-55, channel=37)
             for i in range(10)
         ])
-        results = filter_packets(packets, start=7)
-        assert len(results) == 3
-        assert results[0]["index"] == 7
+        result = filter_packets(packets, start=7)
+        assert result["returned"] == 3
+        assert result["packets"][0]["index"] == 7
+        assert result["has_more"] is False
 
     def test_combined_filters(self):
         packets = MockPackets([
@@ -127,24 +140,42 @@ class TestFilterPackets:
             MockPacket(summary="ADV_IND", time=1100, rssi=-55, channel=38),
             MockPacket(summary="SCAN_REQ", time=1200, rssi=-60, channel=37),
         ])
-        results = filter_packets(packets, packet_type="ADV_IND", channel=37)
-        assert len(results) == 1
+        result = filter_packets(packets, packet_type="ADV_IND", channel=37)
+        assert result["returned"] == 1
 
     def test_includes_payload_hex(self):
         payload = b"\x00\x06\xaa\xbb\xcc\xdd\xee\xff\x02\x01\x06"
         packets = MockPackets([
             MockPacket(summary="ADV_IND from AA:BB", time=1000, rssi=-55, channel=37, payload=payload),
         ])
-        results = filter_packets(packets)
-        assert len(results) == 1
-        assert results[0]["payload_hex"] == payload.hex()
+        result = filter_packets(packets)
+        assert result["returned"] == 1
+        assert result["packets"][0]["payload_hex"] == payload.hex()
 
     def test_missing_payload_omitted(self):
         packets = MockPackets([
             MockPacket(summary="ADV_IND", time=1000, rssi=-55, channel=37),
         ])
-        results = filter_packets(packets)
-        assert "payload_hex" not in results[0]
+        result = filter_packets(packets)
+        assert "payload_hex" not in result["packets"][0]
+
+    def test_has_more_false_when_exact_match(self):
+        packets = MockPackets([
+            MockPacket(summary=f"ADV_IND #{i}", time=i * 1000, rssi=-55, channel=37)
+            for i in range(5)
+        ])
+        result = filter_packets(packets, max_results=5)
+        assert result["returned"] == 5
+        assert result["has_more"] is False
+
+    def test_has_more_true_with_more_results(self):
+        packets = MockPackets([
+            MockPacket(summary=f"ADV_IND #{i}", time=i * 1000, rssi=-55, channel=37)
+            for i in range(10)
+        ])
+        result = filter_packets(packets, max_results=5)
+        assert result["returned"] == 5
+        assert result["has_more"] is True
 
 
 class TestFindErrorPackets:
@@ -256,7 +287,7 @@ class TestAnalyzeConnectionLive:
         assert "ADV_IND" not in counts  # advertising excluded
         assert counts.get("CONNECT_IND", 0) == 1
         assert counts.get("ATT", 0) == 1
-        assert counts.get("LE_DATA", 0) == 1
+        assert counts.get("L2CAP", 0) == 1
 
     def test_no_connections_error(self):
         result = analyze_connection_live([], MockPackets([]))
@@ -310,11 +341,11 @@ class TestConnectionAccuracy:
         result1 = analyze_connection_live([conn1, conn2], packets, connection_index=0)
         result2 = analyze_connection_live([conn1, conn2], packets, connection_index=1)
 
-        # Connection 1: CONNECT_IND + ATT + LE_DATA + LL_CONTROL (LL_TERMINATE)
+        # Connection 1: CONNECT_IND + ATT + L2CAP + LL_CONTROL (LL_TERMINATE)
         counts1 = result1["packet_type_counts"]
         assert counts1.get("CONNECT_IND", 0) == 1
         assert counts1.get("ATT", 0) == 1
-        assert counts1.get("LE_DATA", 0) == 1
+        assert counts1.get("L2CAP", 0) == 1
         assert "SMP" not in counts1  # belongs to conn2
 
         # Connection 2: CONNECT_IND + SMP + ATT
@@ -322,7 +353,7 @@ class TestConnectionAccuracy:
         assert counts2.get("CONNECT_IND", 0) == 1
         assert counts2.get("SMP", 0) == 1
         assert counts2.get("ATT", 0) == 1
-        assert "LE_DATA" not in counts2  # belongs to conn1
+        assert "L2CAP" not in counts2  # belongs to conn1
 
     def test_single_connection_backward_compatible(self):
         """Single connection still works as before."""

@@ -408,8 +408,9 @@ class HardwareManager:
         start: int = 0,
     ) -> dict:
         """Query captured packets with optional filters."""
+        empty = {"packets": [], "has_more": False, "returned": 0}
         if self._state != HardwareState.CAPTURING:
-            return {"packets": [], "count": 0}
+            return empty
         try:
             cmd: dict[str, Any] = {
                 "cmd": "get_packets",
@@ -427,7 +428,7 @@ class HardwareManager:
                 return result["data"]
         except HardwareError:
             pass
-        return {"packets": [], "count": 0}
+        return empty
 
     def get_devices(self) -> dict:
         """Get list of discovered devices from the live capture."""

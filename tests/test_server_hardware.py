@@ -255,7 +255,7 @@ class TestLiveAnalysisRouting:
 
     def test_search_packets_routes_to_hardware(self, capturing_hw):
         capturing_hw.get_packets.return_value = {
-            "count": 2, "packets": [{"id": 1}, {"id": 2}],
+            "returned": 2, "has_more": False, "packets": [{"id": 1}, {"id": 2}],
         }
         with patch("bluespy_mcp.server._hardware", capturing_hw), \
              patch("bluespy_mcp.server._capture") as mock_cap:
@@ -263,9 +263,9 @@ class TestLiveAnalysisRouting:
             from bluespy_mcp.server import search_packets
             result = json.loads(search_packets(channel=37))
         capturing_hw.get_packets.assert_called_once_with(
-            summary_contains=None, packet_type=None, channel=37, max_results=100,
+            summary_contains=None, packet_type=None, channel=37, max_results=100, start=0,
         )
-        assert result["count"] == 2
+        assert result["returned"] == 2
 
     def test_list_devices_routes_to_hardware(self, capturing_hw):
         capturing_hw.get_devices.return_value = {
@@ -408,7 +408,8 @@ class TestLiveAnalysisEndToEnd:
 
         # Phase 4: Search packets by channel (CAPTURING state)
         mgr.get_packets.return_value = {
-            "count": 3,
+            "returned": 3,
+            "has_more": False,
             "packets": [
                 {"id": 10, "channel": 37, "type": "ADV_IND"},
                 {"id": 25, "channel": 37, "type": "ADV_IND"},
@@ -419,10 +420,10 @@ class TestLiveAnalysisEndToEnd:
              patch("bluespy_mcp.server._capture") as mock_cap:
             mock_cap.is_loaded = False
             result = json.loads(search_packets(channel=37))
-        assert result["count"] == 3
+        assert result["returned"] == 3
         assert all(p["channel"] == 37 for p in result["packets"])
         mgr.get_packets.assert_called_once_with(
-            summary_contains=None, packet_type=None, channel=37, max_results=100,
+            summary_contains=None, packet_type=None, channel=37, max_results=100, start=0,
         )
 
         # Phase 5: Stop capture

@@ -201,10 +201,11 @@ class CaptureManager:
         packet_type: str | None = None,
         channel: int | None = None,
         max_results: int = 100,
+        start: int = 0,
     ) -> dict:
         """Search packets via the worker subprocess."""
         self._require_loaded()
-        cmd: dict[str, Any] = {"cmd": "get_packets", "max_results": max_results}
+        cmd: dict[str, Any] = {"cmd": "get_packets", "max_results": max_results, "start": start}
         if summary_contains is not None:
             cmd["summary_contains"] = summary_contains
         if packet_type is not None:

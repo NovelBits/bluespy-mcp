@@ -233,7 +233,7 @@ def handle_command(
         elif action == "get_packets":
             cache = _ensure_cache(bluespy, cache)
             packets_view = CachedPackets(cache)
-            results = filter_packets(
+            result = filter_packets(
                 packets_view,
                 summary_contains=cmd.get("summary_contains"),
                 packet_type=cmd.get("packet_type"),
@@ -241,7 +241,7 @@ def handle_command(
                 max_results=cmd.get("max_results", 100),
                 start=cmd.get("start", 0),
             )
-            return {"ok": True, "data": {"packets": results, "count": len(results)}}, cache
+            return {"ok": True, "data": result}, cache
 
         elif action == "get_devices":
             devices = extract_device_info(bluespy.devices)

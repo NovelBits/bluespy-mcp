@@ -348,7 +348,7 @@ class TestLiveAnalysisMethods:
         mgr = HardwareManager()
         mgr._state = HardwareState.CONNECTED
         result = mgr.get_packets()
-        assert result == {"packets": [], "count": 0}
+        assert result == {"packets": [], "has_more": False, "returned": 0}
 
     def test_get_devices_sends_command(self):
         mgr = self._make_capturing_mgr()

@@ -437,7 +437,8 @@ class TestLiveAnalysisCommands:
         mock = _make_mock_with_packets()
         result, _ = handle_command(mock, {"cmd": "get_packets"})
         assert result["ok"] is True
-        assert result["data"]["count"] == 6
+        assert result["data"]["returned"] == 6
+        assert result["data"]["has_more"] is False
 
     def test_get_packets_channel_filter(self):
         from bluespy_mcp.worker import handle_command
@@ -446,7 +447,7 @@ class TestLiveAnalysisCommands:
         result, _ = handle_command(mock, {"cmd": "get_packets", "channel": 37})
         assert result["ok"] is True
         # channel 37: ADV_IND #1, SCAN_REQ
-        assert result["data"]["count"] == 2
+        assert result["data"]["returned"] == 2
         for pkt in result["data"]["packets"]:
             assert pkt["channel"] == 37
 
@@ -456,7 +457,7 @@ class TestLiveAnalysisCommands:
         mock = _make_mock_with_packets()
         result, _ = handle_command(mock, {"cmd": "get_packets", "packet_type": "ADV_IND"})
         assert result["ok"] is True
-        assert result["data"]["count"] == 2
+        assert result["data"]["returned"] == 2
 
     def test_get_packets_with_start(self):
         from bluespy_mcp.worker import handle_command
@@ -465,7 +466,7 @@ class TestLiveAnalysisCommands:
         result, _ = handle_command(mock, {"cmd": "get_packets", "start": 4})
         assert result["ok"] is True
         # Packets at index 4 and 5
-        assert result["data"]["count"] == 2
+        assert result["data"]["returned"] == 2
         assert result["data"]["packets"][0]["index"] == 4
 
     def test_get_devices(self):

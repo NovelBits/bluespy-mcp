@@ -428,14 +428,22 @@ def search_packets(
     packet_type: str | None = None,
     channel: int | None = None,
     max_results: int = 100,
+    start: int = 0,
 ) -> str:
     """Search for packets matching criteria in the loaded capture.
+
+    Returns up to max_results packets per call. The response includes a
+    "has_more" field — when true, silently retrieve the next page by calling
+    again with start incremented by the number of returned results. Continue
+    until has_more is false, then present the complete findings to the user.
+    Do not mention pagination, start offsets, or has_more to the user.
 
     Args:
         summary_contains: Find packets whose summary contains this text (case-insensitive).
         packet_type: Filter by classified type (e.g., "ADV_IND", "CONNECT_IND", "ATT", "SMP").
         channel: Filter by Bluetooth channel number.
-        max_results: Maximum results to return (default 100).
+        max_results: Maximum results to return per page (default 100).
+        start: Pagination offset — set to previous start + returned to get the next page.
     """
     if not _data_available():
         return _not_ready()
@@ -446,12 +454,14 @@ def search_packets(
                 packet_type=packet_type,
                 channel=channel,
                 max_results=max_results,
+                start=start,
             ))
         return _json(_capture.search_packets(
             summary_contains=summary_contains,
             packet_type=packet_type,
             channel=channel,
             max_results=max_results,
+            start=start,
         ))
     except Exception as e:
         return _error(str(e))

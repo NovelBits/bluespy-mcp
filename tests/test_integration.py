@@ -147,8 +147,8 @@ class TestRealAnalyzer:
         assert "packet_type_counts" in summary
         # Should have at least some recognized packet types
         known_types = {"ADV_IND", "ADV_NONCONN_IND", "SCAN_REQ", "SCAN_RSP",
-                       "CONNECT_IND", "ATT", "SMP", "LE_DATA", "CRC_ERROR",
-                       "LL_CONTROL", "DATA", "OTHER"}
+                       "CONNECT_IND", "ATT", "SMP", "L2CAP", "LE_DATA",
+                       "CRC_ERROR", "LL_CONTROL", "DATA", "OTHER"}
         found_types = set(summary["packet_type_counts"].keys())
         assert len(found_types & known_types) > 0, f"No known types found in: {found_types}"
 
