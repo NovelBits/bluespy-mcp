@@ -166,7 +166,7 @@ Add to your MCP server configuration:
 
 | Tool | Description |
 |------|-------------|
-| `search_packets(summary_contains?, packet_type?, channel?, max_results?)` | Filter packets by criteria |
+| `search_packets(summary_contains?, packet_type?, channel?, max_results?, start?)` | Filter packets by criteria (paginated — returns `has_more` when truncated) |
 | `inspect_connection(connection_index)` | Deep-dive connection analysis with packet breakdown |
 | `inspect_advertising(device_index)` | Per-device advertising analysis with RSSI and channel stats |
 | `inspect_all_devices()` | Batch advertising analysis for ALL devices in a single pass (much faster than per-device calls) |
@@ -290,6 +290,7 @@ This MCP server works with any LLM that supports tool use. The built-in prompt t
 - **Use the prompt templates.** They walk any model through load → summarize → analyze → inspect in the right order.
 - **Tool-use reliability matters more than model size.** A mid-tier model that follows tool sequences correctly will outperform a large model that skips steps.
 - **Domain knowledge helps but isn't required.** The server returns structured JSON with classified packet types, so the model doesn't need to know Bluetooth LE internals to report useful findings.
+- **Extended thinking is unnecessary.** The tasks here are tool-calling and summarization, not complex reasoning. Standard inference is faster, cheaper, and equally effective. Keep extended thinking disabled.
 
 ## Development
 
