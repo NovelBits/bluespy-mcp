@@ -2,10 +2,14 @@
 
 import pytest
 
+import struct
+
 from bluespy_mcp.analysis_core import (
     _extract_adv_address,
+    _extract_address_type,
     _parse_connection_addresses,
     classify_packet,
+    parse_ad_structures,
     summarize_packets,
     filter_packets,
     find_error_packets,
@@ -776,6 +780,127 @@ class TestEnrichDeviceNames:
         devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
         result = enrich_device_names(devices, MockPackets([]))
         assert result[0]["name"] == ""
+
+
+class TestParseAdStructures:
+    """Tests for parse_ad_structures — Bluetooth LE AD type-length-value parsing."""
+
+    def test_parse_16bit_service_uuids(self):
+        # AD: length=5, type=0x03 (complete 16-bit UUIDs), data=0x0D18 0x4518
+        payload = bytes([5, 0x03, 0x0D, 0x18, 0x45, 0x18])
+        result = parse_ad_structures(payload)
+        assert result["service_uuids"] == ["0x180D", "0x1845"]
+
+    def test_parse_complete_local_name(self):
+        name = "nRF54L15 HRM"
+        name_bytes = name.encode("utf-8")
+        payload = bytes([1 + len(name_bytes), 0x09]) + name_bytes
+        result = parse_ad_structures(payload)
+        assert result["local_name"] == "nRF54L15 HRM"
+        assert "local_name_shortened" not in result
+
+    def test_parse_shortened_local_name(self):
+        name = "nRF54"
+        name_bytes = name.encode("utf-8")
+        payload = bytes([1 + len(name_bytes), 0x08]) + name_bytes
+        result = parse_ad_structures(payload)
+        assert result["local_name"] == "nRF54"
+        assert result["local_name_shortened"] is True
+
+    def test_parse_tx_power_level(self):
+        # AD: length=2, type=0x0A, data=-10 dBm (0xF6 signed)
+        payload = bytes([2, 0x0A, 0xF6])
+        result = parse_ad_structures(payload)
+        assert result["tx_power_dbm"] == -10
+
+    def test_parse_manufacturer_data_apple(self):
+        # AD: length=5, type=0xFF, company_id=0x004C (Apple), data=0x0102
+        payload = bytes([5, 0xFF, 0x4C, 0x00, 0x01, 0x02])
+        result = parse_ad_structures(payload)
+        assert result["manufacturer_data"]["company_id"] == "0x004C"
+        assert result["manufacturer_data"]["company_name"] == "Apple"
+        assert result["manufacturer_data"]["data_hex"] == "0102"
+
+    def test_parse_manufacturer_data_unknown_company(self):
+        # Unknown company ID
+        payload = bytes([4, 0xFF, 0xAB, 0xCD, 0x01])
+        result = parse_ad_structures(payload)
+        assert result["manufacturer_data"]["company_id"] == "0xCDAB"
+        assert "company_name" not in result["manufacturer_data"]
+
+    def test_parse_flags(self):
+        # AD: length=2, type=0x01 (flags), data=0x06 (LE General + BR/EDR Not Supported)
+        payload = bytes([2, 0x01, 0x06])
+        result = parse_ad_structures(payload)
+        assert result["flags"] == 0x06
+
+    def test_parse_multiple_ad_structures(self):
+        # Flags + 16-bit UUID + Complete Local Name
+        flags = bytes([2, 0x01, 0x06])
+        uuids = bytes([3, 0x03, 0x0D, 0x18])
+        name = b"HRM"
+        name_ad = bytes([1 + len(name), 0x09]) + name
+        payload = flags + uuids + name_ad
+        result = parse_ad_structures(payload)
+        assert result["flags"] == 0x06
+        assert result["service_uuids"] == ["0x180D"]
+        assert result["local_name"] == "HRM"
+
+    def test_parse_empty_payload(self):
+        result = parse_ad_structures(b"")
+        assert result == {}
+
+    def test_parse_zero_length_stops(self):
+        # Zero length byte stops parsing
+        payload = bytes([2, 0x01, 0x06, 0, 0xFF, 0xFF])
+        result = parse_ad_structures(payload)
+        assert result["flags"] == 0x06
+        assert "manufacturer_data" not in result
+
+    def test_parse_128bit_uuid(self):
+        # 128-bit UUID in little-endian (as broadcast over the air)
+        # Big-endian (standard): 00000d0d-0000-1000-8000-00805f9b34fb
+        # = 00000d0d 0000 1000 8000 00805f9b34fb as bytes
+        uuid_be = bytes.fromhex("00000d0d00001000800000805f9b34fb")
+        uuid_le = uuid_be[::-1]  # Reverse for little-endian
+        payload = bytes([17, 0x07]) + uuid_le
+        result = parse_ad_structures(payload)
+        assert len(result["service_uuids"]) == 1
+        assert result["service_uuids"][0] == "00000d0d-0000-1000-8000-00805f9b34fb"
+
+
+class TestExtractAddressType:
+    """Tests for _extract_address_type — parsing device summary address types."""
+
+    def test_static_address(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF, Static")
+        assert info["address_type"] == "Random Static"
+
+    def test_public_address(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF, Public")
+        assert info["address_type"] == "Public"
+
+    def test_random_address(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF, Random")
+        assert info["address_type"] == "Random"
+
+    def test_resolvable_address(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF, Resolvable")
+        assert info["address_type"] == "Random Resolvable"
+
+    def test_no_comma(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF")
+        assert info["address_type"] == ""
+
+    def test_unknown_type(self):
+        info = {"address_type": ""}
+        _extract_address_type(info, "AA:BB:CC:DD:EE:FF, SomethingNew")
+        assert info["address_type"] == ""
 
 
 class TestConstants:

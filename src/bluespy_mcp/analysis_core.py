@@ -12,15 +12,110 @@ Used by:
 from __future__ import annotations
 
 import re
+import struct
 from typing import Any
 
 # Maximum packets to iterate for summary (prevents hanging on huge captures)
 SUMMARY_PACKET_LIMIT = 50_000
 
+# Common Bluetooth LE AD types (Bluetooth Core Spec, Supplement to the Core Spec)
+_AD_TYPE_FLAGS = 0x01
+_AD_TYPE_INCOMPLETE_16BIT_UUIDS = 0x02
+_AD_TYPE_COMPLETE_16BIT_UUIDS = 0x03
+_AD_TYPE_INCOMPLETE_128BIT_UUIDS = 0x06
+_AD_TYPE_COMPLETE_128BIT_UUIDS = 0x07
+_AD_TYPE_SHORTENED_LOCAL_NAME = 0x08
+_AD_TYPE_COMPLETE_LOCAL_NAME = 0x09
+_AD_TYPE_TX_POWER_LEVEL = 0x0A
+_AD_TYPE_MANUFACTURER_SPECIFIC = 0xFF
+
+# Well-known Company IDs (Bluetooth SIG assigned numbers)
+_COMPANY_IDS = {
+    0x004C: "Apple",
+    0x0006: "Microsoft",
+    0x000F: "Broadcom",
+    0x000D: "Texas Instruments",
+    0x0059: "Nordic Semiconductor",
+    0x00E0: "Google",
+    0x0075: "Samsung",
+    0x0310: "Qualcomm",
+}
+
 ERROR_KEYWORDS = [
     "ERROR", "FAIL", "REJECT", "TIMEOUT", "DISCONNECT",
     "UNKNOWN", "INVALID", "REFUSED", "TERMINATE",
 ]
+
+
+def parse_ad_structures(payload: bytes) -> dict[str, Any]:
+    """Parse Bluetooth LE AD structures from an advertising payload.
+
+    AD structures use a type-length-value encoding:
+    [length] [ad_type] [data...] repeated until end of payload.
+
+    Returns a dict with parsed fields: service_uuids, local_name,
+    tx_power, manufacturer_data, flags.
+    """
+    result: dict[str, Any] = {}
+    uuids: list[str] = []
+    i = 0
+    n = len(payload)
+
+    while i < n:
+        length = payload[i]
+        if length == 0 or i + length >= n:
+            break
+        ad_type = payload[i + 1]
+        data = payload[i + 2:i + 1 + length]
+
+        if ad_type == _AD_TYPE_FLAGS and data:
+            result["flags"] = data[0]
+
+        elif ad_type in (_AD_TYPE_COMPLETE_16BIT_UUIDS, _AD_TYPE_INCOMPLETE_16BIT_UUIDS):
+            for j in range(0, len(data) - 1, 2):
+                uuid_val = struct.unpack_from("<H", data, j)[0]
+                uuids.append(f"0x{uuid_val:04X}")
+
+        elif ad_type in (_AD_TYPE_COMPLETE_128BIT_UUIDS, _AD_TYPE_INCOMPLETE_128BIT_UUIDS):
+            for j in range(0, len(data) - 15, 16):
+                uuid_bytes = data[j:j + 16][::-1]  # Little-endian to big-endian
+                uuid_hex = uuid_bytes.hex()
+                uuid_str = (
+                    f"{uuid_hex[0:8]}-{uuid_hex[8:12]}-{uuid_hex[12:16]}-"
+                    f"{uuid_hex[16:20]}-{uuid_hex[20:32]}"
+                )
+                uuids.append(uuid_str)
+
+        elif ad_type in (_AD_TYPE_COMPLETE_LOCAL_NAME, _AD_TYPE_SHORTENED_LOCAL_NAME):
+            try:
+                name = data.decode("utf-8", errors="replace")
+                result["local_name"] = name
+                if ad_type == _AD_TYPE_SHORTENED_LOCAL_NAME:
+                    result["local_name_shortened"] = True
+            except Exception:
+                pass
+
+        elif ad_type == _AD_TYPE_TX_POWER_LEVEL and len(data) >= 1:
+            result["tx_power_dbm"] = struct.unpack("b", data[:1])[0]
+
+        elif ad_type == _AD_TYPE_MANUFACTURER_SPECIFIC and len(data) >= 2:
+            company_id = struct.unpack_from("<H", data, 0)[0]
+            company_name = _COMPANY_IDS.get(company_id)
+            mfr: dict[str, Any] = {
+                "company_id": f"0x{company_id:04X}",
+            }
+            if company_name:
+                mfr["company_name"] = company_name
+            if len(data) > 2:
+                mfr["data_hex"] = data[2:].hex()
+            result["manufacturer_data"] = mfr
+
+        i += 1 + length
+
+    if uuids:
+        result["service_uuids"] = uuids
+
+    return result
 
 
 def classify_packet(summary: str) -> str:
@@ -313,6 +408,30 @@ def find_error_packets(packets, *, max_results: int = 100, start: int = 0) -> li
     return errors
 
 
+_ADDRESS_TYPE_MAP = {
+    "static": "Random Static",
+    "public": "Public",
+    "random": "Random",
+    "resolvable": "Random Resolvable",
+    "non-resolvable": "Random Non-Resolvable",
+}
+
+
+def _extract_address_type(info: dict, dev_summary: str) -> None:
+    """Extract address type from device summary string.
+
+    BlueSPY device summaries follow the format "AA:BB:CC:DD:EE:FF, Static"
+    where the part after the comma indicates the address type.
+    """
+    parts = dev_summary.split(",", 1)
+    if len(parts) > 1:
+        type_str = parts[1].strip().lower()
+        for key, label in _ADDRESS_TYPE_MAP.items():
+            if key in type_str:
+                info["address_type"] = label
+                return
+
+
 def extract_device_info(devices) -> list[dict]:
     """Extract device information from blueSPY device objects.
 
@@ -324,9 +443,13 @@ def extract_device_info(devices) -> list[dict]:
     """
     result = []
     for idx, dev in enumerate(devices):
-        info: dict[str, Any] = {"index": idx, "address": "", "name": "", "connection_count": 0}
+        info: dict[str, Any] = {
+            "index": idx, "address": "", "address_type": "",
+            "name": "", "connection_count": 0,
+        }
 
-        # Extract address
+        # Extract address (and address type from summary)
+        dev_summary = ""
         for method in ["query_str", "query"]:
             try:
                 addr = getattr(dev, method)("address")
@@ -341,12 +464,21 @@ def extract_device_info(devices) -> list[dict]:
 
         if not info["address"]:
             try:
-                summary = dev.query_str("summary")
-                match = re.search(r"([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})", summary)
+                dev_summary = dev.query_str("summary")
+                match = re.search(r"([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})", dev_summary)
                 if match:
                     info["address"] = match.group(1)
             except (AttributeError, Exception):
                 pass
+
+        # Extract address type from device summary (format: "AA:BB:CC:DD:EE:FF, Static")
+        if not dev_summary:
+            try:
+                dev_summary = dev.query_str("summary")
+            except (AttributeError, Exception):
+                pass
+        if dev_summary:
+            _extract_address_type(info, dev_summary)
 
         # Extract name
         for method in ["query_str", "query"]:
@@ -628,6 +760,7 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
         Dict with device info, advertising sample, RSSI/channel stats.
     """
     dev_list = extract_device_info(devices)
+    enrich_device_names(dev_list, packets)
     if not dev_list:
         return {"error": "No devices found in this capture."}
     if device_index >= len(dev_list):
@@ -683,6 +816,7 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
 
     result: dict[str, Any] = {
         "address": device_address,
+        "address_type": dev_info.get("address_type", ""),
         "name": dev_info.get("name", ""),
         "advertisement_count": len(adv_packets),
         "advertisements_sample": adv_packets[:50],
@@ -692,6 +826,21 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
         result["rssi_min"] = min(rssi_values)
         result["rssi_max"] = max(rssi_values)
         result["rssi_avg"] = round(sum(rssi_values) / len(rssi_values), 1)
+
+    # Parse AD structures from first advertising packet with a payload
+    for adv in adv_packets:
+        hex_str = adv.get("payload_hex")
+        if hex_str:
+            try:
+                parsed = parse_ad_structures(bytes.fromhex(hex_str))
+                if parsed:
+                    result["advertising_data"] = parsed
+                    # Use AD local name as fallback for device name
+                    if not result["name"] and parsed.get("local_name"):
+                        result["name"] = parsed["local_name"]
+                    break
+            except (ValueError, Exception):
+                continue
 
     return result
 
@@ -703,6 +852,7 @@ def analyze_all_advertising(devices, packets) -> dict:
     all packets), this iterates packets once and buckets by device address.
     """
     dev_list = extract_device_info(devices)
+    enrich_device_names(dev_list, packets)
     if not dev_list:
         return {"devices": [], "total_devices": 0}
 
@@ -773,6 +923,7 @@ def analyze_all_advertising(devices, packets) -> dict:
 
         device_result: dict[str, Any] = {
             "address": dev_info.get("address", ""),
+            "address_type": dev_info.get("address_type", ""),
             "name": dev_info.get("name", ""),
             "advertisement_count": len(pkts),
             "advertisements_sample": pkts[:10],  # Fewer per device in batch mode
@@ -782,6 +933,21 @@ def analyze_all_advertising(devices, packets) -> dict:
             device_result["rssi_min"] = min(rssis)
             device_result["rssi_max"] = max(rssis)
             device_result["rssi_avg"] = round(sum(rssis) / len(rssis), 1)
+
+        # Parse AD structures from first advertising packet with a payload
+        for adv in pkts:
+            hex_str = adv.get("payload_hex")
+            if hex_str:
+                try:
+                    parsed = parse_ad_structures(bytes.fromhex(hex_str))
+                    if parsed:
+                        device_result["advertising_data"] = parsed
+                        if not device_result["name"] and parsed.get("local_name"):
+                            device_result["name"] = parsed["local_name"]
+                        break
+                except (ValueError, Exception):
+                    continue
+
         results.append(device_result)
 
     return {"devices": results, "total_devices": len(results)}
