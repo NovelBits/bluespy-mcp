@@ -554,6 +554,48 @@ def enrich_device_names(devices_info: list[dict], packets) -> list[dict]:
     return devices_info
 
 
+def enrich_device_rssi(devices_info: list[dict], packets) -> list[dict]:
+    """Add per-device RSSI statistics by scanning advertising packets.
+
+    For each device, collects RSSI values from advertising packets that
+    match the device's address, then computes min, max, and average.
+    """
+    addr_map = {
+        d["address"].upper(): d
+        for d in devices_info
+        if d.get("address")
+    }
+    if not addr_map:
+        return devices_info
+
+    rssi_values: dict[str, list[int]] = {a: [] for a in addr_map}
+
+    total = len(packets)
+    for i in range(total):
+        try:
+            pkt = packets[i]
+            summary = pkt.summary
+            s_upper = summary.upper()
+            if "ADV" not in s_upper and "SCAN_RSP" not in s_upper:
+                continue
+            rssi = pkt.rssi
+            for addr in addr_map:
+                if addr in s_upper:
+                    rssi_values[addr].append(rssi)
+                    break
+        except (AttributeError, Exception):
+            continue
+
+    for addr, dev_info in addr_map.items():
+        vals = rssi_values.get(addr, [])
+        if vals:
+            dev_info["rssi_min"] = min(vals)
+            dev_info["rssi_max"] = max(vals)
+            dev_info["rssi_avg"] = round(sum(vals) / len(vals), 1)
+
+    return devices_info
+
+
 def _extract_adv_address(pkt) -> str:
     """Extract advertiser address from an advertising PDU's payload.
 

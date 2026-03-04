@@ -15,6 +15,7 @@ from bluespy_mcp.analysis_core import (
     find_error_packets,
     extract_device_info,
     enrich_device_names,
+    enrich_device_rssi,
     extract_connection_info,
     analyze_connection_live,
     analyze_all_connections,
@@ -780,6 +781,62 @@ class TestEnrichDeviceNames:
         devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
         result = enrich_device_names(devices, MockPackets([]))
         assert result[0]["name"] == ""
+
+
+class TestEnrichDeviceRssi:
+    """Tests for enrich_device_rssi — per-device RSSI stats from packets."""
+
+    def test_computes_rssi_stats(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF"}]
+        packets = MockPackets([
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 37, rssi=-50),
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 38, rssi=-60),
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 39, rssi=-70),
+        ])
+        result = enrich_device_rssi(devices, packets)
+        assert result[0]["rssi_min"] == -70
+        assert result[0]["rssi_max"] == -50
+        assert result[0]["rssi_avg"] == -60.0
+
+    def test_skips_non_advertising_packets(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF"}]
+        packets = MockPackets([
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 37, rssi=-50),
+            MockPacket("LE-U L2CAP Data AA:BB:CC:DD:EE:FF", 5, rssi=-30),
+        ])
+        result = enrich_device_rssi(devices, packets)
+        assert result[0]["rssi_min"] == -50
+        assert result[0]["rssi_max"] == -50
+
+    def test_separates_devices(self):
+        devices = [
+            {"address": "AA:BB:CC:DD:EE:FF"},
+            {"address": "11:22:33:44:55:66"},
+        ]
+        packets = MockPackets([
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 37, rssi=-40),
+            MockPacket("ADV_IND 11:22:33:44:55:66", 37, rssi=-80),
+        ])
+        result = enrich_device_rssi(devices, packets)
+        assert result[0]["rssi_avg"] == -40.0
+        assert result[1]["rssi_avg"] == -80.0
+
+    def test_no_rssi_when_no_matching_packets(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF"}]
+        packets = MockPackets([
+            MockPacket("ADV_IND 11:22:33:44:55:66", 37, rssi=-50),
+        ])
+        result = enrich_device_rssi(devices, packets)
+        assert "rssi_min" not in result[0]
+
+    def test_empty_packets(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF"}]
+        result = enrich_device_rssi(devices, MockPackets([]))
+        assert "rssi_min" not in result[0]
+
+    def test_empty_devices(self):
+        result = enrich_device_rssi([], MockPackets([]))
+        assert result == []
 
 
 class TestParseAdStructures:
