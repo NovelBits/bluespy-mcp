@@ -234,6 +234,36 @@ class TestExtractDeviceInfo:
         assert result[0]["address"] == "AA:BB:CC:DD:EE:FF"
         assert result[1]["address"] == "11:22:33:44:55:66"
 
+    def test_extracts_name_from_summary_parentheses(self):
+        """Device summary with name in parens: 'D1:11:FE:93:26:44, Static (nRF54L15 HRM)'"""
+        dev = MockDevice(_address="D1:11:FE:93:26:44")
+        # Override query to return summary with parenthesized name
+        original_query = dev.query
+        def query_with_name(name):
+            if name == "summary":
+                return "D1:11:FE:93:26:44, Static (nRF54L15 HRM)"
+            return original_query(name)
+        dev.query = query_with_name
+        dev.query_str = lambda name: str(dev.query(name))
+
+        result = extract_device_info([dev])
+        assert result[0]["name"] == "nRF54L15 HRM"
+
+    def test_name_from_query_takes_precedence(self):
+        """If query('name') works, it should win over summary parsing."""
+        dev = MockDevice(_address="AA:BB:CC:DD:EE:FF")
+        def query_with_name(name):
+            if name == "summary":
+                return "AA:BB:CC:DD:EE:FF, Static (SummaryName)"
+            if name == "name":
+                return "QueryName"
+            raise AttributeError()
+        dev.query = query_with_name
+        dev.query_str = lambda name: str(dev.query(name))
+
+        result = extract_device_info([dev])
+        assert result[0]["name"] == "QueryName"
+
 
 class TestExtractConnectionInfo:
     def test_extracts_connections(self):

@@ -480,7 +480,7 @@ def extract_device_info(devices) -> list[dict]:
         if dev_summary:
             _extract_address_type(info, dev_summary)
 
-        # Extract name
+        # Extract name — try query first, fall back to device summary
         for method in ["query_str", "query"]:
             try:
                 name = getattr(dev, method)("name")
@@ -492,6 +492,13 @@ def extract_device_info(devices) -> list[dict]:
                     break
             except (AttributeError, Exception):
                 continue
+
+        # Fallback: parse name from device summary parentheses
+        # e.g. "D1:11:FE:93:26:44, Static (nRF54L15 HRM)"
+        if not info["name"] and dev_summary:
+            m = _NAME_IN_PARENS_RE.search(dev_summary)
+            if m:
+                info["name"] = m.group(1).strip()
 
         # Connection count
         try:
