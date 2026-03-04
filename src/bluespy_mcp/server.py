@@ -378,10 +378,13 @@ def hardware_status() -> str:
 
 @mcp.tool
 def capture_summary() -> str:
-    """Get a high-level summary of the loaded capture.
+    """Get a high-level summary of the current capture data.
 
-    Returns packet counts by type, device list, connection list,
-    capture duration, and other metadata.
+    Works both on loaded files AND during a live capture (no need to
+    stop capturing first — data updates in real-time).
+
+    Returns packet counts by type, device list with names and RSSI,
+    connection list, capture duration, and other metadata.
     """
     if not _data_available():
         return _not_ready()
@@ -395,7 +398,12 @@ def capture_summary() -> str:
 
 @mcp.tool
 def list_devices() -> str:
-    """List all Bluetooth devices found in the loaded capture."""
+    """List all Bluetooth LE devices detected so far.
+
+    Works during a live capture (no need to stop first) — call it
+    while capturing to see devices as they appear. Returns address,
+    address type, name, RSSI stats (min/max/avg), and connection count.
+    """
     if not _data_available():
         return _not_ready()
     try:
@@ -408,7 +416,10 @@ def list_devices() -> str:
 
 @mcp.tool
 def list_connections() -> str:
-    """List all Bluetooth connections found in the loaded capture."""
+    """List all Bluetooth LE connections detected so far.
+
+    Works during a live capture (no need to stop first).
+    """
     if not _data_available():
         return _not_ready()
     try:
@@ -430,7 +441,9 @@ def search_packets(
     max_results: int = 100,
     start: int = 0,
 ) -> str:
-    """Search for packets matching criteria in the loaded capture.
+    """Search for packets matching criteria in the current capture data.
+
+    Works during a live capture (no need to stop first).
 
     Returns up to max_results packets per call. The response includes a
     "has_more" field — when true, silently retrieve the next page by calling
@@ -469,7 +482,9 @@ def search_packets(
 
 @mcp.tool
 def inspect_connection(connection_index: int = 0) -> str:
-    """Deep-dive analysis of a specific Bluetooth connection.
+    """Deep-dive analysis of a specific Bluetooth LE connection.
+
+    Works during a live capture (no need to stop first).
 
     Args:
         connection_index: Which connection to analyze (0-based index from list_connections).
@@ -488,6 +503,10 @@ def inspect_connection(connection_index: int = 0) -> str:
 def inspect_advertising(device_index: int = 0) -> str:
     """Analyze advertising data for a specific device.
 
+    Works during a live capture (no need to stop first). Returns
+    address type, device name, parsed AD structures (service UUIDs,
+    TX power, manufacturer data), RSSI stats, and advertising samples.
+
     Args:
         device_index: Which device to analyze (0-based index from list_devices).
     """
@@ -505,10 +524,10 @@ def inspect_advertising(device_index: int = 0) -> str:
 def inspect_all_devices() -> str:
     """Analyze advertising data for ALL devices in a single pass.
 
-    Much faster than calling inspect_advertising() for each device.
-    Returns advertising stats (packet count, RSSI, channels, sample)
-    for every discovered device. Use this when you need to analyze
-    multiple devices — then use inspect_advertising(device_index)
+    Works during a live capture (no need to stop first). Much faster
+    than calling inspect_advertising() for each device. Returns
+    advertising stats (packet count, RSSI, channels, parsed AD data,
+    device name) for every discovered device. Use inspect_advertising()
     only for deep dives on specific devices of interest.
     """
     if not _data_available():
@@ -525,11 +544,10 @@ def inspect_all_devices() -> str:
 def inspect_all_connections() -> str:
     """Analyze ALL connections in a single pass.
 
-    Much faster than calling inspect_connection() for each connection.
-    Returns packet type counts attributed to each connection using
-    address matching and temporal boundaries. Use this when you need
-    to analyze multiple connections — then use inspect_connection(index)
-    only for deep dives on specific connections of interest.
+    Works during a live capture (no need to stop first). Much faster
+    than calling inspect_connection() for each connection. Returns
+    packet type counts attributed to each connection using address
+    matching and temporal boundaries.
     """
     if not _data_available():
         return _not_ready()
@@ -543,7 +561,9 @@ def inspect_all_connections() -> str:
 
 @mcp.tool
 def find_capture_errors(max_results: int = 100) -> str:
-    """Find all error, failure, and disconnect packets in the loaded capture.
+    """Find all error, failure, and disconnect packets.
+
+    Works during a live capture (no need to stop first).
 
     Args:
         max_results: Maximum number of errors to return (default 100).
