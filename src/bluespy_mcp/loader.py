@@ -9,6 +9,7 @@ Resolution order:
 
 from __future__ import annotations
 
+import atexit
 import importlib
 import importlib.util
 import logging
@@ -111,6 +112,25 @@ def _try_vendor() -> ModuleType | None:
     return module
 
 
+def _unregister_bluespy_deinit(module: ModuleType) -> None:
+    """Unregister bluespy_deinit from atexit to prevent crash on exit.
+
+    The vendored bluespy.py registers _libbluespy.bluespy_deinit as an
+    atexit handler at import time. When the MCP server process exits,
+    this handler can segfault in the native library (bluespy_query_get
+    accessing freed memory). Our worker subprocess already uses os._exit
+    to skip atexit, and the main process handles cleanup explicitly via
+    HardwareManager._cleanup or CaptureManager.close_file.
+    """
+    try:
+        lib = getattr(module, "_libbluespy", None)
+        if lib is not None:
+            atexit.unregister(lib.bluespy_deinit)
+            logger.debug("Unregistered bluespy_deinit from atexit")
+    except Exception:
+        pass
+
+
 def discover_bluespy() -> ModuleType | None:
     """Discover and load the blueSPY Python API.
 
@@ -130,6 +150,7 @@ def discover_bluespy() -> ModuleType | None:
         module = loader()
         if module is not None:
             _bluespy_module = module
+            _unregister_bluespy_deinit(module)
             return module
 
     logger.warning(

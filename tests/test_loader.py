@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from bluespy_mcp.loader import discover_bluespy, _PLATFORM_PATHS
+from bluespy_mcp.loader import discover_bluespy, _unregister_bluespy_deinit, _PLATFORM_PATHS
 
 
 class TestPlatformPaths:
@@ -61,3 +61,28 @@ class TestDiscoverBluespy:
                     with patch("bluespy_mcp.loader._try_vendor", return_value=None):
                         module = discover_bluespy()
                         assert module is None
+
+
+class TestUnregisterBluespyDeinit:
+    """Test that bluespy_deinit atexit handler is removed after load."""
+
+    def test_unregisters_deinit(self):
+        """_unregister_bluespy_deinit calls atexit.unregister on the deinit function."""
+        mock_module = MagicMock()
+        mock_deinit = MagicMock()
+        mock_module._libbluespy.bluespy_deinit = mock_deinit
+
+        with patch("bluespy_mcp.loader.atexit") as mock_atexit:
+            _unregister_bluespy_deinit(mock_module)
+            mock_atexit.unregister.assert_called_once_with(mock_deinit)
+
+    def test_handles_missing_libbluespy(self):
+        """No crash if module doesn't have _libbluespy attribute."""
+        mock_module = MagicMock(spec=[])  # No attributes
+        _unregister_bluespy_deinit(mock_module)  # Should not raise
+
+    def test_handles_none_libbluespy(self):
+        """No crash if _libbluespy is None."""
+        mock_module = MagicMock()
+        mock_module._libbluespy = None
+        _unregister_bluespy_deinit(mock_module)  # Should not raise
