@@ -782,6 +782,30 @@ class TestEnrichDeviceNames:
         result = enrich_device_names(devices, MockPackets([]))
         assert result[0]["name"] == ""
 
+    def test_adds_name_hint_when_no_name_found(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("ADV_IND AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == ""
+        assert "name_hint" in result[0]
+        assert "Scan Response" in result[0]["name_hint"]
+
+    def test_no_name_hint_when_name_found(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (MyDevice) AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "MyDevice"
+        assert "name_hint" not in result[0]
+
+    def test_no_name_hint_when_already_named(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": "Known"}]
+        result = enrich_device_names(devices, MockPackets([]))
+        assert "name_hint" not in result[0]
+
 
 class TestEnrichDeviceRssi:
     """Tests for enrich_device_rssi — per-device RSSI stats from packets."""

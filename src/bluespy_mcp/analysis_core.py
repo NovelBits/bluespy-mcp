@@ -551,6 +551,15 @@ def enrich_device_names(devices_info: list[dict], packets) -> list[dict]:
         except (AttributeError, Exception):
             continue
 
+    # Add hint for devices that still have no name
+    for dev_info in nameless.values():
+        dev_info["name_hint"] = (
+            "Device name not found. Names are typically broadcast in Scan "
+            "Response (SCAN_RSP) packets, which only appear when another "
+            "device actively scans this device. Try capturing longer or "
+            "while a phone/tablet is scanning nearby."
+        )
+
     return devices_info
 
 
@@ -883,6 +892,14 @@ def analyze_advertising_live(devices, packets, device_index: int = 0) -> dict:
                     break
             except (ValueError, Exception):
                 continue
+
+    if not result["name"]:
+        result["name_hint"] = (
+            "Device name not found in advertising payload. Names are "
+            "typically in Scan Response (SCAN_RSP) packets, which only "
+            "appear when another device actively scans this device. "
+            "Try capturing longer or while a phone/tablet is scanning nearby."
+        )
 
     return result
 
