@@ -10,6 +10,7 @@ from bluespy_mcp.analysis_core import (
     filter_packets,
     find_error_packets,
     extract_device_info,
+    enrich_device_names,
     extract_connection_info,
     analyze_connection_live,
     analyze_all_connections,
@@ -686,6 +687,95 @@ class TestAnalyzeAllAdvertising:
         assert 38 in dev0["channels_used"]
         dev1 = result["devices"][1]
         assert 39 in dev1["channels_used"]
+
+
+class TestEnrichDeviceNames:
+    """Tests for enrich_device_names — extracting names from packet summaries."""
+
+    def test_extracts_name_from_scan_rsp(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (nRF54L15 HRM) AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "nRF54L15 HRM"
+
+    def test_extracts_name_from_adv_ind(self):
+        devices = [{"address": "11:22:33:44:55:66", "name": ""}]
+        packets = MockPackets([
+            MockPacket("ADV_IND (MyDevice) 11:22:33:44:55:66", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "MyDevice"
+
+    def test_skips_devices_that_already_have_names(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": "Existing"}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (NewName) AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "Existing"
+
+    def test_skips_non_advertising_packets(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("LE-U L2CAP Data (SomeName) AA:BB:CC:DD:EE:FF", 0),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == ""
+
+    def test_no_match_when_address_differs(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (OtherDevice) 11:22:33:44:55:66", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == ""
+
+    def test_enriches_multiple_devices(self):
+        devices = [
+            {"address": "AA:BB:CC:DD:EE:FF", "name": ""},
+            {"address": "11:22:33:44:55:66", "name": ""},
+        ]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (Device1) AA:BB:CC:DD:EE:FF", 37),
+            MockPacket("ADV_IND (Device2) 11:22:33:44:55:66", 38),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "Device1"
+        assert result[1]["name"] == "Device2"
+
+    def test_stops_early_when_all_names_found(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (Found) AA:BB:CC:DD:EE:FF", 37),
+            MockPacket("SCAN_RSP (Later) AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "Found"
+
+    def test_returns_unchanged_when_all_have_names(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": "Already"}]
+        packets = MockPackets([])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "Already"
+
+    def test_case_insensitive_address_matching(self):
+        devices = [{"address": "aa:bb:cc:dd:ee:ff", "name": ""}]
+        packets = MockPackets([
+            MockPacket("SCAN_RSP (CaseTest) AA:BB:CC:DD:EE:FF", 37),
+        ])
+        result = enrich_device_names(devices, packets)
+        assert result[0]["name"] == "CaseTest"
+
+    def test_handles_empty_devices_list(self):
+        result = enrich_device_names([], MockPackets([]))
+        assert result == []
+
+    def test_handles_empty_packets(self):
+        devices = [{"address": "AA:BB:CC:DD:EE:FF", "name": ""}]
+        result = enrich_device_names(devices, MockPackets([]))
+        assert result[0]["name"] == ""
 
 
 class TestConstants:

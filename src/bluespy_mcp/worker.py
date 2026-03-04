@@ -60,6 +60,7 @@ from bluespy_mcp.analysis_core import (
     filter_packets,
     find_error_packets,
     extract_device_info,
+    enrich_device_names,
     extract_connection_info,
     analyze_connection_live,
     analyze_all_connections,
@@ -227,6 +228,7 @@ def handle_command(
             packets_view = CachedPackets(cache)
             summary = summarize_packets(packets_view, limit=cmd.get("limit"))
             summary["devices"] = extract_device_info(bluespy.devices)
+            enrich_device_names(summary["devices"], bluespy.packets)
             summary["connections"] = extract_connection_info(bluespy.connections)
             return {"ok": True, "data": summary}, cache
 
@@ -245,6 +247,7 @@ def handle_command(
 
         elif action == "get_devices":
             devices = extract_device_info(bluespy.devices)
+            enrich_device_names(devices, bluespy.packets)
             return {"ok": True, "data": {"devices": devices, "count": len(devices)}}, cache
 
         elif action == "get_connections":

@@ -372,6 +372,56 @@ def extract_device_info(devices) -> list[dict]:
     return result
 
 
+_NAME_IN_PARENS_RE = re.compile(r"\((.+?)\)")
+
+
+def enrich_device_names(devices_info: list[dict], packets) -> list[dict]:
+    """Fill in missing device names by scanning advertising packet summaries.
+
+    The blueSPY device object's query("name") often raises AttributeError,
+    but the packet summary includes the name in parentheses, e.g.:
+      "SCAN_RSP (nRF54L15 HRM)"
+      "ADV_IND (MyDevice)"
+
+    For each device without a name, this scans advertising/scan response
+    packets matching the device's address and extracts the parenthesized name.
+    """
+    # Collect devices that need names
+    nameless = {
+        d["address"].upper(): d
+        for d in devices_info
+        if d.get("address") and not d.get("name")
+    }
+    if not nameless:
+        return devices_info
+
+    total = len(packets)
+    for i in range(total):
+        if not nameless:
+            break
+        try:
+            summary = packets[i].summary
+            s_upper = summary.upper()
+            if "ADV" not in s_upper and "SCAN_RSP" not in s_upper:
+                continue
+            m = _NAME_IN_PARENS_RE.search(summary)
+            if not m:
+                continue
+            name = m.group(1).strip()
+            if not name:
+                continue
+            # Check if this packet belongs to a nameless device
+            for addr, dev_info in list(nameless.items()):
+                if addr in s_upper:
+                    dev_info["name"] = name
+                    del nameless[addr]
+                    break
+        except (AttributeError, Exception):
+            continue
+
+    return devices_info
+
+
 def _extract_adv_address(pkt) -> str:
     """Extract advertiser address from an advertising PDU's payload.
 
