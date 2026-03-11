@@ -256,6 +256,8 @@ Or use the built-in `analyze-capture` prompt for a guided walkthrough of any fil
 
 ## Live Hardware Capture
 
+> **Important:** Close the blueSPY desktop application before using live hardware capture. Only one application can control the sniffer at a time. If the device LED is green, it's already in use — close blueSPY (or any other client) until the LED turns blue.
+
 If you have a blueSPY sniffer connected via USB, the MCP server can control it directly — connect, start/stop captures, and analyze results in real time.
 
 ```
@@ -342,7 +344,7 @@ This removes the stale lock file and proceeds with the connection.
 
 ### Hardware: Python crash on exit
 
-You may see a macOS crash report (`Python quit unexpectedly`) after using hardware tools. This is a known issue with the blueSPY native library's cleanup routine (`bluespy_deinit`) and does not affect capture data or MCP server operation. The crash occurs during process exit and can be safely dismissed.
+Fixed in v1.3.0. If you're on an older version, upgrade with `pip install --upgrade bluespy-mcp`.
 
 ### Module not found errors
 
