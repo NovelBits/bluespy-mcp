@@ -10,14 +10,14 @@ Instead of writing Python scripts or manually filtering packets, just ask:
 
 > "Load this capture and tell me what's going on."
 
-The AI loads your capture file, classifies 54,000+ packets, identifies 219 devices, maps 25 connections, and gives you a structured breakdown — in seconds.
+The AI loads your capture file, classifies thousands of packets, identifies devices, maps connections, and gives you a structured breakdown — in seconds.
 
-### Example: Analyzing a Restaurant Bluetooth LE Environment
+### Example: Analyzing a Capture File
 
 ```
-You: Load the First Watch capture and summarize it.
+You: Load my capture and summarize it.
 
-Claude: Loaded First Watch Carmel.pcapng — 54,195 packets over 32 seconds.
+Claude: Loaded capture.pcapng — 54,195 packets over 32 seconds.
 
   219 devices detected, 25 active connections.
 
@@ -31,7 +31,7 @@ Claude: Loaded First Watch Carmel.pcapng — 54,195 packets over 32 seconds.
 
 You: Show me the advertising for the first device.
 
-Claude: Device BC:57:29:01:00:42 — 34 advertisements found.
+Claude: Device 0 — 34 advertisements found.
   Channels: 37, 38, 39
   RSSI: min -82, max -48, avg -65.2
 
